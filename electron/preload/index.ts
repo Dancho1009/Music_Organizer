@@ -4,6 +4,8 @@ import type { EngineArgs, EngineCommand } from '../main/engine'
 const api = {
   chooseDirectory: (): Promise<string | null> => ipcRenderer.invoke('music:choose-directory'),
   chooseLrc: (): Promise<string | null> => ipcRenderer.invoke('music:choose-lrc'),
+  openPath: (targetPath: string): Promise<boolean> => ipcRenderer.invoke('music:open-path', targetPath),
+  openFile: (targetPath: string): Promise<boolean> => ipcRenderer.invoke('music:open-file', targetPath),
   runEngine: (command: EngineCommand, args: EngineArgs) =>
     ipcRenderer.invoke('music:run-engine', { command, args }),
   onProgress: (listener: (event: unknown) => void): (() => void) => {
