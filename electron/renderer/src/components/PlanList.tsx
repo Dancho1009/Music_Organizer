@@ -22,6 +22,8 @@ function statusText(status: string): string {
     reuse: '已存在',
     blocked: '已阻断',
     manual_review: '待确认',
+    suspect: '可疑，需确认',
+    malformed: '格式异常',
     applied: '已执行',
     completed: '已完成'
   }
@@ -57,6 +59,7 @@ function TrackRow({ track, decisions, selectedTracks, onToggleSelect, onOpenFold
           <span>{track.resolved.main_artist || '歌词清理'}</span>
           <span>{track.resolved.album || '不迁移音频'}</span>
           <span>歌词：{track.lyrics.status}</span>
+          {typeof track.lyrics.confidence === 'number' && <span>可信度：{Math.round(track.lyrics.confidence * 100)}%</span>}
         </div>
         {track.lyrics.metadata_samples && track.lyrics.metadata_samples.length > 0 && (
           <div className="lyrics-preview">检测到的内容：{track.lyrics.metadata_samples.join(' / ')}</div>
@@ -68,6 +71,9 @@ function TrackRow({ track, decisions, selectedTracks, onToggleSelect, onOpenFold
             <span>{issue.message}</span>
           </div>
         ))}
+        {track.lyrics.reasons && track.lyrics.reasons.length > 0 && (
+          <div className="lyrics-preview">判定说明：{track.lyrics.reasons.join('；')}</div>
+        )}
         {decision && <div className="decision">待重新生成：{decision.exclude ? '排除歌曲' : decision.lyrics_action === 'delete' ? '删除异常歌词' : decision.lyrics_action === 'ignore' ? '忽略歌词' : decision.lyrics_status === 'actual' ? '确认实际歌词' : String(decision.lyrics_path || '')}</div>}
       </div>
       <div className="track-actions">

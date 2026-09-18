@@ -23,6 +23,8 @@ export interface TrackPlan {
   resolved: Record<string, string>
   lyrics: {
     status: string
+    confidence?: number
+    reasons?: string[]
     source?: string
     match_type?: string
     actual_samples?: string[]

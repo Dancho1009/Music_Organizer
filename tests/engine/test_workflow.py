@@ -18,7 +18,7 @@ def test_planner_routes_flac_and_only_exact_actual_lrc(tmp_path: Path, monkeypat
     audio = source_root / "track.flac"
     lrc = source_root / "track.lrc"
     audio.write_bytes(b"audio")
-    lrc.write_text("[00:01.00]actual lyric\n", encoding="utf-8")
+    lrc.write_text("[00:01.00]first lyric\n[00:02.00]second lyric\n", encoding="utf-8")
     (tmp_path / "flac").mkdir()
     (tmp_path / "mp3").mkdir()
     scanned = ScannedAudio(
@@ -53,7 +53,7 @@ def test_planner_blocks_hard_links_across_filesystems(tmp_path: Path, monkeypatc
     audio = source_root / "track.mp3"
     lrc = source_root / "track.lrc"
     audio.write_bytes(b"audio")
-    lrc.write_text("[00:01.00]actual lyric\n", encoding="utf-8")
+    lrc.write_text("[00:01.00]first lyric\n[00:02.00]second lyric\n", encoding="utf-8")
     monkeypatch.setattr(
         "music_organizer.planner.scan_source",
         lambda _: [ScannedAudio(str(audio), "track.mp3", str(lrc), [], None)],
@@ -78,7 +78,7 @@ def test_planner_routes_mp3_by_main_artist_and_album(tmp_path: Path, monkeypatch
     audio = source_root / "track.mp3"
     lrc = source_root / "track.lrc"
     audio.write_bytes(b"audio")
-    lrc.write_text("[00:01.00]actual lyric\n", encoding="utf-8")
+    lrc.write_text("[00:01.00]first lyric\n[00:02.00]second lyric\n", encoding="utf-8")
     monkeypatch.setattr(
         "music_organizer.planner.scan_source",
         lambda _: [ScannedAudio(str(audio), "track.mp3", str(lrc), [], None)],
@@ -124,6 +124,36 @@ def test_planner_marks_abnormal_lyrics_for_deletion_without_migrating_lrc(tmp_pa
     assert plan.tracks[0].lyrics["deletion"]["requested"] is True
 
 
+def test_planner_rejects_deletion_of_uncertain_lyrics(tmp_path: Path, monkeypatch) -> None:
+    source_root = tmp_path / "source"
+    mp3_root = tmp_path / "mp3"
+    source_root.mkdir()
+    mp3_root.mkdir()
+    audio = source_root / "track.mp3"
+    lrc = source_root / "track.lrc"
+    audio.write_bytes(b"audio")
+    lrc.write_text("[00:01.00]只有一句歌词\n", encoding="utf-8")
+    scanned = ScannedAudio(str(audio), "track.mp3", str(lrc), [], None)
+    monkeypatch.setattr("music_organizer.planner.scan_source", lambda _: [scanned])
+    monkeypatch.setattr(
+        "music_organizer.planner.read_tags",
+        lambda _: {"album": "Album", "albumartist": "Artist", "artist": "Artist"},
+    )
+
+    initial = build_plan(str(source_root), None, str(mp3_root))
+    track_id = initial.tracks[0].track_id
+    plan = build_plan(
+        str(source_root),
+        None,
+        str(mp3_root),
+        decisions={track_id: {"lyrics_action": "delete"}},
+    )
+
+    assert plan.status == "blocked"
+    assert plan.tracks[0].lyrics.get("deletion") is None
+    assert any(issue["code"] == "delete_uncertain_lyric_rejected" for issue in plan.tracks[0].issues)
+
+
 def test_lyrics_cleanup_plan_requires_only_source_and_can_verify_without_migration(tmp_path: Path, monkeypatch) -> None:
     source_root = tmp_path / "source"
     source_root.mkdir()
@@ -167,7 +197,7 @@ def test_planner_allows_one_destination_and_skips_unselected_format(tmp_path: Pa
     flac_lrc = source_root / "selected.lrc"
     flac.write_bytes(b"flac")
     mp3.write_bytes(b"mp3")
-    flac_lrc.write_text("[00:01.00]actual lyric\n", encoding="utf-8")
+    flac_lrc.write_text("[00:01.00]first lyric\n[00:02.00]second lyric\n", encoding="utf-8")
     monkeypatch.setattr(
         "music_organizer.planner.scan_source",
         lambda _: [
@@ -201,7 +231,7 @@ def test_shared_cover_is_planned_once(tmp_path: Path, monkeypatch) -> None:
         audio = source_root / f"track{number}.flac"
         lyrics = source_root / f"track{number}.lrc"
         audio.write_bytes(f"audio-{number}".encode())
-        lyrics.write_text("[00:01.00]actual lyric\n", encoding="utf-8")
+        lyrics.write_text("[00:01.00]first lyric\n[00:02.00]second lyric\n", encoding="utf-8")
         scanned.append(ScannedAudio(str(audio), audio.name, str(lyrics), [], str(cover)))
     monkeypatch.setattr("music_organizer.planner.scan_source", lambda _: scanned)
     monkeypatch.setattr(

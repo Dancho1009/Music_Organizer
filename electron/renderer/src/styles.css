@@ -74,6 +74,7 @@ button:not(.icon-button):not(.segmented button):hover:not(:disabled) { backgroun
 .state { display: inline-flex; align-items: center; width: fit-content; border-radius: 999px; padding: 2px 7px; font-size: 12px; font-weight: 650; }
 .state-ready, .state-applied, .state-completed, .state-verified, .state-cleaned { background: #dff2ee; color: #1d695f; }
 .state-warning, .state-manual_review { background: #fff2cd; color: #875d00; }
+.state-suspect, .state-malformed { background: #fff2cd; color: #875d00; }
 .state-blocked, .state-failed { background: #f9e1df; color: #9c3834; }
 .state-reuse { background: #e6ebf1; color: #526477; }
 .state-rolled_back, .state-excluded { background: #e7ebef; color: #526171; }

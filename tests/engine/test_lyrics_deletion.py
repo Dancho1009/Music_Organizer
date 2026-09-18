@@ -58,7 +58,7 @@ def test_lyrics_deletion_requires_preview_then_removes_and_logs(tmp_path: Path) 
 
 def test_lyrics_deletion_refuses_changed_file(tmp_path: Path) -> None:
     plan_path, data_root, lrc = _plan_for_lrc(tmp_path, "[00:01.00]作词：甲\n")
-    lrc.write_text("[00:01.00]第一句歌词\n", encoding="utf-8")
+    lrc.write_text("[00:01.00]第一句歌词\n[00:02.00]第二句歌词\n", encoding="utf-8")
 
     result = delete_planned_lyrics(plan_path, data_root, apply=True)
 
@@ -69,7 +69,7 @@ def test_lyrics_deletion_refuses_changed_file(tmp_path: Path) -> None:
 
 def test_lyrics_deletion_refuses_file_reclassified_as_actual(tmp_path: Path) -> None:
     plan_path, data_root, lrc = _plan_for_lrc(tmp_path, "[00:01.00]作词：甲\n")
-    lrc.write_text("[00:01.00]第一句歌词\n", encoding="utf-8")
+    lrc.write_text("[00:01.00]第一句歌词\n[00:02.00]第二句歌词\n", encoding="utf-8")
     plan = load_plan(plan_path)
     plan.tracks[0].lyrics["deletion"]["fingerprint"] = fingerprint(lrc, include_hash=True)
     save_plan(plan, plan_path)
@@ -78,6 +78,20 @@ def test_lyrics_deletion_refuses_file_reclassified_as_actual(tmp_path: Path) -> 
 
     assert not result["ok"]
     assert result["blocked"][0]["reason"] == "文件重新检测为实际歌词，拒绝删除。"
+    assert lrc.exists()
+
+
+def test_lyrics_deletion_refuses_file_reclassified_as_uncertain(tmp_path: Path) -> None:
+    plan_path, data_root, lrc = _plan_for_lrc(tmp_path, "[00:01.00]作词：甲\n")
+    lrc.write_text("[00:01.00]只有一句歌词\n", encoding="utf-8")
+    plan = load_plan(plan_path)
+    plan.tracks[0].lyrics["deletion"]["fingerprint"] = fingerprint(lrc, include_hash=True)
+    save_plan(plan, plan_path)
+
+    result = delete_planned_lyrics(plan_path, data_root)
+
+    assert not result["ok"]
+    assert result["blocked"][0]["reason"] == "文件重新检测为可疑或格式异常，拒绝删除。"
     assert lrc.exists()
 
 

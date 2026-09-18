@@ -93,6 +93,17 @@ def _lyrics_for_track(
                 )
             )
             return None, info, issues
+        if info["status"] in {"suspect", "malformed"}:
+            issues.append(
+                _issue(
+                    "delete_uncertain_lyric_rejected",
+                    "blocked",
+                    "歌词内容或格式无法确认，不能自动标记为删除。",
+                    lyrics_status=info["status"],
+                    confidence=info.get("confidence"),
+                )
+            )
+            return None, info, issues
         info["deletion"] = {
             "requested": True,
             "state": "pending",
@@ -107,6 +118,8 @@ def _lyrics_for_track(
                 "manual_review",
                 "歌词不是已确认的实际歌词，需要人工确认或忽略。",
                 lyrics_status=info["status"],
+                confidence=info.get("confidence"),
+                reasons=info.get("reasons", []),
             )
         )
     return selected, info, issues

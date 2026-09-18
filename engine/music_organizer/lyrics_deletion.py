@@ -99,13 +99,17 @@ def _candidate(
         }
 
     current_status = str(classify_lrc(source)["status"])
-    if current_status == "actual":
+    if current_status in {"actual", "suspect", "malformed"}:
         return {
             "track_id": track.track_id,
             "source": source,
             "state": "blocked",
             "ok": False,
-            "reason": "文件重新检测为实际歌词，拒绝删除。",
+            "reason": (
+                "文件重新检测为实际歌词，拒绝删除。"
+                if current_status == "actual"
+                else "文件重新检测为可疑或格式异常，拒绝删除。"
+            ),
             "lyrics_status": current_status,
         }
 
