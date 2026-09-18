@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import path from 'node:path'
 import { type EngineArgs, type EngineCommand, runEngine } from './engine'
 
@@ -43,6 +43,16 @@ function installIpc(): void {
       properties: ['openFile']
     })
     return result.canceled ? null : result.filePaths[0]
+  })
+  ipcMain.handle('music:open-path', async (_event, targetPath: string) => {
+    if (!targetPath) return false
+    shell.showItemInFolder(targetPath)
+    return true
+  })
+  ipcMain.handle('music:open-file', async (_event, targetPath: string) => {
+    if (!targetPath) return false
+    await shell.openPath(targetPath)
+    return true
   })
   ipcMain.handle(
     'music:run-engine',
