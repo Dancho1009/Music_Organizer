@@ -10,6 +10,13 @@ import type { LyricsDeletionPreview, MigrationPlan, PlanHistoryItem, TrackPlan, 
 
 type Decisions = Record<string, Record<string, string | boolean>>
 type CleanupPreview = { count: number; remaining: { counts: Record<string, number> }; empty_directories: string[] }
+type TrackFilter = 'all' | 'blocked' | 'manual_review' | 'warning'
+
+const HIGH_CONFIDENCE_THRESHOLD = 0.85
+
+function isHighConfidenceTrack(track: TrackPlan): boolean {
+  return typeof track.lyrics.confidence === 'number' && track.lyrics.confidence > HIGH_CONFIDENCE_THRESHOLD
+}
 
 function resultPlan(value: unknown): MigrationPlan | null {
   if (!value || typeof value !== 'object') return null
@@ -40,7 +47,8 @@ export default function App(): JSX.Element {
   const [history, setHistory] = useState<PlanHistoryItem[]>([])
   const [visibleRecovery, setVisibleRecovery] = useState('')
   const [reviewConfirmed, setReviewConfirmed] = useState(false)
-  const [trackFilter, setTrackFilter] = useState<'all' | 'blocked' | 'manual_review' | 'warning'>('all')
+  const [trackFilter, setTrackFilter] = useState<TrackFilter>('all')
+  const [showHighConfidenceTracks, setShowHighConfidenceTracks] = useState(false)
   const [cleanupPreview, setCleanupPreview] = useState<CleanupPreview | null>(null)
   const [lyricsDeletionPreview, setLyricsDeletionPreview] = useState<LyricsDeletionPreview | null>(null)
   const { selectedTracks, selectedCount, toggleTrack, selectTracks, clearSelection } = useTrackSelection()
@@ -76,13 +84,28 @@ export default function App(): JSX.Element {
   const canVerify = Boolean(plan && (['applied', 'verify_failed', 'verified'].includes(plan.status) || (isLyricsCleanupPlan && plan.status === 'ready')))
   const interrupted = history.find((item) => item.recovery)
   const visiblePlan = useMemo(() => {
-    if (!plan || trackFilter === 'all') return plan
-    return { ...plan, tracks: plan.tracks.filter((track) => track.status === trackFilter) }
-  }, [plan, trackFilter])
+    if (!plan) return null
+    return {
+      ...plan,
+      tracks: plan.tracks.filter((track) => {
+        const matchesStatus = trackFilter === 'all' || track.status === trackFilter
+        const matchesConfidence = showHighConfidenceTracks || !isHighConfidenceTrack(track)
+        return matchesStatus && matchesConfidence
+      })
+    }
+  }, [plan, showHighConfidenceTracks, trackFilter])
+
+  const hiddenHighConfidenceCount = useMemo(
+    () => plan?.tracks.filter((track) => {
+      const matchesStatus = trackFilter === 'all' || track.status === trackFilter
+      return matchesStatus && isHighConfidenceTrack(track)
+    }).length || 0,
+    [plan, trackFilter]
+  )
 
   const selectedPlanTracks = useMemo(
-    () => plan?.tracks.filter((track) => selectedTracks.has(track.track_id)) || [],
-    [plan, selectedTracks]
+    () => visiblePlan?.tracks.filter((track) => selectedTracks.has(track.track_id)) || [],
+    [selectedTracks, visiblePlan]
   )
 
   async function choose(setter: (value: string) => void): Promise<void> {
@@ -245,8 +268,18 @@ export default function App(): JSX.Element {
   }
 
   function selectAllTracks(): void {
-    if (!plan) return
-    selectTracks(plan.tracks.map((track) => track.track_id))
+    if (!visiblePlan) return
+    selectTracks(visiblePlan.tracks.map((track) => track.track_id))
+  }
+
+  function updateTrackFilter(value: TrackFilter): void {
+    clearSelection()
+    setTrackFilter(value)
+  }
+
+  function updateShowHighConfidenceTracks(value: boolean): void {
+    clearSelection()
+    setShowHighConfidenceTracks(value)
   }
 
   async function openFolder(track: TrackPlan): Promise<void> {
@@ -380,7 +413,8 @@ export default function App(): JSX.Element {
           <section className="review" aria-label="计划明细">
             <div className="section-heading">
               <h2>计划明细</h2>
-              <span>{plan.tracks.length} 项</span>
+              <span>显示 {visiblePlan?.tracks.length || 0} / {plan.tracks.length} 项</span>
+              {!showHighConfidenceTracks && hiddenHighConfidenceCount > 0 && <span>隐藏高可信度歌词 {hiddenHighConfidenceCount} 项</span>}
               <div className="review-stats" aria-label="计划明细统计">
                 <span className={issueCount ? 'metric-alert' : ''}>异常 {issueCount}</span>
                 <span className={pendingCount ? 'metric-review' : ''}>待处理 {pendingCount}</span>
@@ -395,8 +429,14 @@ export default function App(): JSX.Element {
               onIgnoreLyrics={() => applyBatchLyricsAction('ignore')}
               onDeleteLyrics={() => applyBatchLyricsAction('delete')}
             />
-            <div className="filter-tabs" aria-label="筛选计划明细">
-              {(['all', 'blocked', 'manual_review', 'warning'] as const).map((value) => <button type="button" className={trackFilter === value ? 'selected' : ''} key={value} onClick={() => setTrackFilter(value)}>{value === 'all' ? '全部' : value === 'blocked' ? '阻断' : value === 'manual_review' ? '待确认' : '提示'}</button>)}
+            <div className="review-filters" aria-label="筛选计划明细">
+              <div className="filter-tabs">
+                {(['all', 'blocked', 'manual_review', 'warning'] as const).map((value) => <button type="button" className={trackFilter === value ? 'selected' : ''} key={value} onClick={() => updateTrackFilter(value)}>{value === 'all' ? '全部' : value === 'blocked' ? '阻断' : value === 'manual_review' ? '待确认' : '提示'}</button>)}
+              </div>
+              <label className="confidence-visibility-toggle">
+                <input type="checkbox" checked={showHighConfidenceTracks} onChange={(event) => updateShowHighConfidenceTracks(event.target.checked)} />
+                显示高可信度歌词（&gt;85%）
+              </label>
             </div>
             {visiblePlan && <PlanList
               plan={visiblePlan}
