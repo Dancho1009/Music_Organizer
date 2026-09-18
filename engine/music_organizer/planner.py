@@ -44,6 +44,7 @@ def _lyrics_for_track(
     item: ScannedAudio,
     source_root: str,
     decision: dict[str, Any],
+    audio_tags: dict[str, Any] | None = None,
 ) -> tuple[str | None, dict[str, Any], list[dict[str, Any]]]:
     issues: list[dict[str, Any]] = []
     selected = item.lrc
@@ -75,7 +76,7 @@ def _lyrics_for_track(
         )
         return None, {"status": "missing", "match_type": "missing"}, issues
 
-    info = classify_lrc(selected)
+    info = classify_lrc(selected, audio_tags=audio_tags, audio_path=item.audio)
     override = decision.get("lyrics_status")
     if override in {"actual", "metadata_only", "empty"}:
         info["status"] = override
@@ -93,7 +94,7 @@ def _lyrics_for_track(
                 )
             )
             return None, info, issues
-        if info["status"] in {"suspect", "malformed"}:
+        if info["status"] in {"suspect", "malformed", "manual_review"}:
             issues.append(
                 _issue(
                     "delete_uncertain_lyric_rejected",
@@ -122,6 +123,14 @@ def _lyrics_for_track(
                 reasons=info.get("reasons", []),
             )
         )
+    existing_codes = {str(issue["code"]) for issue in issues}
+    for reason in info.get("reasons", []):
+        if not isinstance(reason, dict) or reason.get("severity") not in {"manual_review", "blocked"}:
+            continue
+        code = str(reason.get("code", "lyrics_review_required"))
+        if code in existing_codes:
+            continue
+        issues.append(_issue(code, str(reason["severity"]), str(reason.get("message", "歌词需要人工确认。")), confidence=info.get("confidence"), reason=reason))
     return selected, info, issues
 
 
@@ -336,7 +345,7 @@ def build_plan(
                 )
             )
             continue
-        lrc_path, lyrics, lyric_issues = _lyrics_for_track(item, source, decision)
+        lrc_path, lyrics, lyric_issues = _lyrics_for_track(item, source, decision, tags)
         issues.extend(lyric_issues)
 
         assets: list[AssetPlan] = []
@@ -425,6 +434,7 @@ def build_plan(
             "lyrics_cleanup_only": lyrics_cleanup_only,
         },
         tracks=tracks,
+        schema_version=2,
         decisions=decisions,
         parent_plan_id=parent_plan_id,
         plan_version=plan_version,

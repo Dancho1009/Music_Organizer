@@ -17,6 +17,8 @@ def test_classifies_empty_metadata_only_and_actual_lyrics(tmp_path: Path) -> Non
     assert classify_lrc(credits)["status"] == "metadata_only"
     assert classify_lrc(actual)["status"] == "actual"
     assert classify_lrc(netease_credits)["status"] == "metadata_only"
+    assert classify_lrc(empty)["confidence"] <= 0.1
+    assert classify_lrc(credits)["confidence"] <= 0.2
 
 
 def test_classifies_non_lyric_markers_and_uncertain_content(tmp_path: Path) -> None:
@@ -34,6 +36,40 @@ def test_classifies_non_lyric_markers_and_uncertain_content(tmp_path: Path) -> N
     assert classify_lrc(one_line)["status"] == "suspect"
     assert classify_lrc(malformed)["status"] == "malformed"
     assert classify_lrc(untimed)["status"] == "suspect"
+    assert classify_lrc(malformed)["confidence"] <= 0.3
+
+
+def test_emits_structured_reasons_and_score_dimensions(tmp_path: Path) -> None:
+    path = tmp_path / "bad.lrc"
+    path.write_text("[00:05.00]第一句歌词\n[00:01.00]第二句歌词\n正文没有时间\n", encoding="utf-8")
+
+    result = classify_lrc(path)
+
+    assert result["confidence_version"] == "lyrics-score-v2"
+    assert set(result["scores"]) == {"format", "timing", "content", "match", "source"}
+    reason_codes = {reason["code"] for reason in result["reasons"]}
+    assert "non_monotonic_timestamps" in reason_codes
+    assert "untimed_content" in reason_codes
+
+
+def test_flags_title_and_artist_mismatch_for_manual_review(tmp_path: Path) -> None:
+    path = tmp_path / "Song.lrc"
+    path.write_text("[ti:Other Song]\n[ar:Wrong Artist]\n[00:01.00]第一句歌词\n[00:03.00]第二句歌词\n", encoding="utf-8")
+
+    result = classify_lrc(path, audio_tags={"title": "Song", "artist": "Artist"}, audio_path=str(tmp_path / "Song.mp3"))
+
+    assert result["status"] == "manual_review"
+    assert result["confidence"] < 0.85
+    assert {reason["code"] for reason in result["reasons"]} >= {"title_mismatch", "artist_mismatch"}
+
+
+def test_flags_lyrics_duration_mismatch(tmp_path: Path) -> None:
+    path = tmp_path / "Song.lrc"
+    path.write_text("[00:01.00]第一句歌词\n[00:03.00]第二句歌词\n", encoding="utf-8")
+
+    result = classify_lrc(path, audio_tags={"title": "Song", "artist": "Artist", "duration_seconds": 20.0}, audio_path=str(tmp_path / "Song.mp3"))
+
+    assert "lyrics_duration_too_short" in {reason["code"] for reason in result["reasons"]}
 
 
 def test_classifies_actual_lyrics_with_counts_and_confidence(tmp_path: Path) -> None:
