@@ -19,8 +19,9 @@ export function mergeDecisions(
   current: Decisions,
   next: Decisions
 ): Decisions {
-  return {
-    ...current,
-    ...next
+  const merged: Decisions = { ...current }
+  for (const [trackId, decision] of Object.entries(next)) {
+    merged[trackId] = { ...current[trackId], ...decision }
   }
+  return merged
 }
