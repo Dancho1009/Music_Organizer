@@ -123,11 +123,16 @@ button:not(.icon-button):not(.segmented button):hover:not(:disabled) { backgroun
 .filter-tabs button { min-height: 32px !important; border: 0 !important; border-radius: 0 !important; border-bottom: 2px solid transparent !important; background: transparent !important; color: #68798a !important; }
 .filter-tabs button.selected { border-bottom-color: #237b70 !important; color: #1d665c !important; }
 
+.batch-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; border: 1px solid #c9ddd8; border-radius: 5px; padding: 10px 12px; background: #f1f8f6; }
+.batch-summary { color: #27675e; font-size: 13px; font-weight: 680; }
+.batch-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+
 @media (max-width: 850px) {
   .app-shell { width: min(100% - 28px, 1180px); padding-top: 20px; }
   .path-grid { grid-template-columns: 1fr; }
   .plan-summary-top, .plan-controls { align-items: start; flex-direction: column; }
   .plan-actions { justify-content: start; }
+  .batch-toolbar { align-items: start; flex-direction: column; }
   .recovery { grid-template-columns: 1fr; }
   .recovery-actions { flex-wrap: wrap; }
   .cleanup-preview { grid-template-columns: repeat(3, minmax(78px, 1fr)); }

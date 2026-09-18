@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, ClipboardCheck, Eraser, FileText, FolderTree, History, Play, RotateCcw, ShieldCheck, Trash2, TriangleAlert } from 'lucide-react'
 import { PathField } from './components/PathField'
+import { BatchToolbar } from './components/BatchToolbar'
 import { PlanList } from './components/PlanList'
+import { buildBatchLyricsDecision, mergeDecisions } from './hooks/useBatchLyricsActions'
+import { useTrackSelection } from './hooks/useTrackSelection'
 import type { EngineCommand } from './types/api'
 import type { LyricsDeletionPreview, MigrationPlan, PlanHistoryItem, TrackPlan, Verification } from './types/plan'
 
@@ -40,6 +43,7 @@ export default function App(): JSX.Element {
   const [trackFilter, setTrackFilter] = useState<'all' | 'blocked' | 'manual_review' | 'warning'>('all')
   const [cleanupPreview, setCleanupPreview] = useState<CleanupPreview | null>(null)
   const [lyricsDeletionPreview, setLyricsDeletionPreview] = useState<LyricsDeletionPreview | null>(null)
+  const { selectedTracks, selectedCount, toggleTrack, selectTracks, clearSelection } = useTrackSelection()
 
   useEffect(() => window.musicOrganizer.onProgress((event) => {
     if (!event || typeof event !== 'object') return
@@ -66,6 +70,11 @@ export default function App(): JSX.Element {
     if (!plan || trackFilter === 'all') return plan
     return { ...plan, tracks: plan.tracks.filter((track) => track.status === trackFilter) }
   }, [plan, trackFilter])
+
+  const selectedPlanTracks = useMemo(
+    () => plan?.tracks.filter((track) => selectedTracks.has(track.track_id)) || [],
+    [plan, selectedTracks]
+  )
 
   async function choose(setter: (value: string) => void): Promise<void> {
     const selected = await window.musicOrganizer.chooseDirectory()
@@ -113,6 +122,7 @@ export default function App(): JSX.Element {
     const nextPlan = resultPlan(value)
     if (nextPlan) {
       setPlan(nextPlan)
+      clearSelection()
       setLyricsCleanupOnly(Boolean(nextPlan.config.lyrics_cleanup_only))
       if (value && typeof value === 'object' && typeof (value as { plan_path?: unknown }).plan_path === 'string') {
         setPlanPath((value as { plan_path: string }).plan_path)
@@ -217,6 +227,33 @@ export default function App(): JSX.Element {
 
   function deleteLyricsDecision(track: TrackPlan): void {
     setDecisions((current) => ({ ...current, [track.track_id]: { ...current[track.track_id], lyrics_action: 'delete' } }))
+  }
+
+  function applyBatchLyricsAction(action: 'confirm' | 'ignore' | 'delete'): void {
+    if (selectedPlanTracks.length === 0) return
+    setDecisions((current) => mergeDecisions(current, buildBatchLyricsDecision(selectedPlanTracks, action)))
+    clearSelection()
+  }
+
+  function selectAllTracks(): void {
+    if (!plan) return
+    selectTracks(plan.tracks.map((track) => track.track_id))
+  }
+
+  async function openFolder(track: TrackPlan): Promise<void> {
+    const opened = await window.musicOrganizer.openPath(track.source_audio)
+    if (!opened) setNotice(`无法打开文件夹：${track.source_audio}`)
+  }
+
+  async function openLyrics(track: TrackPlan): Promise<void> {
+    const lyricsPath = decisions[track.track_id]?.lyrics_path
+    const targetPath = typeof lyricsPath === 'string' && lyricsPath ? lyricsPath : track.lyrics.source
+    if (!targetPath) {
+      setNotice('该歌曲没有可打开的歌词文件。')
+      return
+    }
+    const opened = await window.musicOrganizer.openFile(targetPath)
+    if (!opened) setNotice(`无法打开歌词文件：${targetPath}`)
   }
 
   function excludeTrack(track: TrackPlan): void {
@@ -333,10 +370,30 @@ export default function App(): JSX.Element {
 
           <section className="review" aria-label="计划明细">
             <div className="section-heading"><h2>计划明细</h2><span>{plan.tracks.length} 项</span></div>
+            <BatchToolbar
+              selectedCount={selectedCount}
+              onSelectAll={selectAllTracks}
+              onClear={clearSelection}
+              onConfirmLyrics={() => applyBatchLyricsAction('confirm')}
+              onIgnoreLyrics={() => applyBatchLyricsAction('ignore')}
+              onDeleteLyrics={() => applyBatchLyricsAction('delete')}
+            />
             <div className="filter-tabs" aria-label="筛选计划明细">
               {(['all', 'blocked', 'manual_review', 'warning'] as const).map((value) => <button type="button" className={trackFilter === value ? 'selected' : ''} key={value} onClick={() => setTrackFilter(value)}>{value === 'all' ? '全部' : value === 'blocked' ? '阻断' : value === 'manual_review' ? '待确认' : '提示'}</button>)}
             </div>
-            {visiblePlan && <PlanList plan={visiblePlan} decisions={decisions} onIgnoreLyrics={ignoreLyrics} onSelectLyrics={selectLyrics} onConfirmLyrics={confirmLyrics} onDeleteLyrics={deleteLyricsDecision} onExclude={excludeTrack} />}
+            {visiblePlan && <PlanList
+              plan={visiblePlan}
+              decisions={decisions}
+              selectedTracks={selectedTracks}
+              onToggleSelect={(track) => toggleTrack(track.track_id)}
+              onOpenFolder={openFolder}
+              onOpenLyrics={openLyrics}
+              onIgnoreLyrics={ignoreLyrics}
+              onSelectLyrics={selectLyrics}
+              onConfirmLyrics={confirmLyrics}
+              onDeleteLyrics={deleteLyricsDecision}
+              onExclude={excludeTrack}
+            />}
           </section>
         </>
       ) : (
