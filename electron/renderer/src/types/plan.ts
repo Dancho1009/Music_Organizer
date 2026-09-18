@@ -14,17 +14,28 @@ export interface Issue {
   candidates?: string[]
 }
 
+export interface LyricsReason {
+  code: string
+  severity: 'info' | 'warning' | 'manual_review' | 'blocked'
+  message: string
+  score_impact?: number
+  evidence?: Record<string, unknown>
+}
+
 export interface TrackPlan {
   track_id: string
   source_audio: string
   relative_source: string
   audio_format: string
-  tags: Record<string, string | null>
+  tags: Record<string, string | number | null>
   resolved: Record<string, string>
   lyrics: {
     status: string
     confidence?: number
-    reasons?: string[]
+    confidence_version?: string
+    scores?: Record<string, number>
+    metrics?: Record<string, number | string | boolean>
+    reasons?: Array<LyricsReason | string>
     source?: string
     match_type?: string
     actual_samples?: string[]

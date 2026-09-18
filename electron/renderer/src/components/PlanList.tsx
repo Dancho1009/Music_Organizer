@@ -1,5 +1,5 @@
 import { FileWarning, FolderOpen, ListRestart, Music2, ScanText, Trash2 } from 'lucide-react'
-import type { MigrationPlan, TrackPlan } from '../types/plan'
+import type { LyricsReason, MigrationPlan, TrackPlan } from '../types/plan'
 
 interface PlanListProps {
   plan: MigrationPlan
@@ -28,6 +28,10 @@ function statusText(status: string): string {
     completed: '已完成'
   }
   return values[status] || status
+}
+
+function reasonMessage(reason: LyricsReason | string): string {
+  return typeof reason === 'string' ? reason : reason.message
 }
 
 function TrackRow({ track, decisions, selectedTracks, onToggleSelect, onOpenFolder, onOpenLyrics, onIgnoreLyrics, onSelectLyrics, onConfirmLyrics, onDeleteLyrics, onExclude }: Omit<PlanListProps, 'plan'> & { track: TrackPlan }): JSX.Element {
@@ -71,9 +75,13 @@ function TrackRow({ track, decisions, selectedTracks, onToggleSelect, onOpenFold
             <span>{issue.message}</span>
           </div>
         ))}
-        {track.lyrics.reasons && track.lyrics.reasons.length > 0 && (
-          <div className="lyrics-preview">判定说明：{track.lyrics.reasons.join('；')}</div>
-        )}
+        {track.lyrics.confidence_version && <div className="lyrics-preview">评分模型：{track.lyrics.confidence_version}</div>}
+        {track.lyrics.scores && <div className="lyrics-preview">分项：{Object.entries(track.lyrics.scores).map(([key, value]) => `${key} ${Math.round(value * 100)}%`).join(' · ')}</div>}
+        {track.lyrics.reasons && track.lyrics.reasons.length > 0 && track.lyrics.reasons.map((reason, index) => (
+          <div className="lyrics-preview" key={`${track.track_id}-reason-${typeof reason === 'string' ? index : reason.code}`}>
+            判定说明：{reasonMessage(reason)}
+          </div>
+        ))}
         {decision && <div className="decision">待重新生成：{decision.exclude ? '排除歌曲' : decision.lyrics_action === 'delete' ? '删除异常歌词' : decision.lyrics_action === 'ignore' ? '忽略歌词' : decision.lyrics_status === 'actual' ? '确认实际歌词' : String(decision.lyrics_path || '')}</div>}
       </div>
       <div className="track-actions">

@@ -6,7 +6,7 @@ import { PlanList } from './components/PlanList'
 import { buildBatchLyricsDecision, mergeDecisions } from './hooks/useBatchLyricsActions'
 import { useTrackSelection } from './hooks/useTrackSelection'
 import type { EngineCommand } from './types/api'
-import type { LyricsDeletionPreview, MigrationPlan, PlanHistoryItem, TrackPlan, Verification } from './types/plan'
+import type { LyricsDeletionPreview, LyricsReason, MigrationPlan, PlanHistoryItem, TrackPlan, Verification } from './types/plan'
 
 type Decisions = Record<string, Record<string, string | boolean>>
 type CleanupPreview = { count: number; remaining: { counts: Record<string, number> }; empty_directories: string[] }
@@ -14,8 +14,13 @@ type TrackFilter = 'all' | 'blocked' | 'manual_review' | 'warning'
 
 const HIGH_CONFIDENCE_THRESHOLD = 0.85
 
+function normalizeLyricsReasons(reasons: Array<LyricsReason | string> | undefined): LyricsReason[] {
+  return (reasons || []).map((reason) => typeof reason === 'string' ? { code: 'legacy_reason', severity: 'warning', message: reason } : reason)
+}
+
 function isHighConfidenceTrack(track: TrackPlan): boolean {
-  return typeof track.lyrics.confidence === 'number' && track.lyrics.confidence > HIGH_CONFIDENCE_THRESHOLD
+  const reasons = normalizeLyricsReasons(track.lyrics.reasons)
+  return track.lyrics.confidence_version === 'lyrics-score-v2' && track.lyrics.status === 'actual' && typeof track.lyrics.confidence === 'number' && track.lyrics.confidence > HIGH_CONFIDENCE_THRESHOLD && !reasons.some((reason) => reason.severity === 'manual_review' || reason.severity === 'blocked')
 }
 
 function resultPlan(value: unknown): MigrationPlan | null {
