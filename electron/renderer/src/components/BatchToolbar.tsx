@@ -1,4 +1,5 @@
 import { Check, ListRestart, Trash2, X } from 'lucide-react'
+import { SelectionSummary } from './SelectionSummary'
 
 interface BatchToolbarProps {
   selectedCount: number
@@ -19,7 +20,7 @@ export function BatchToolbar({
 }: BatchToolbarProps): JSX.Element {
   return (
     <section className="batch-toolbar" aria-label="批量操作">
-      <div className="batch-summary">已选择 {selectedCount} 项</div>
+      <SelectionSummary count={selectedCount} />
       <div className="batch-actions">
         <button type="button" onClick={onSelectAll}>全选</button>
         <button type="button" onClick={onClear}><X size={15} />取消选择</button>

@@ -58,6 +58,15 @@ export default function App(): JSX.Element {
 
   const blocked = useMemo(() => plan?.summary.blocked || 0, [plan])
   const reviewed = useMemo(() => plan?.summary.manual_review || 0, [plan])
+  const issueCount = useMemo(() => plan?.tracks.filter((track) => track.issues.length > 0).length || 0, [plan])
+  const pendingCount = useMemo(
+    () => plan?.tracks.filter((track) => track.status === 'blocked' || track.status === 'manual_review').length || 0,
+    [plan]
+  )
+  const conflictCount = useMemo(
+    () => plan?.tracks.filter((track) => track.issues.some((issue) => issue.code === 'different_destination_file' || issue.code === 'source_asset_multiple_destinations')).length || 0,
+    [plan]
+  )
   const pendingLyricsDeletion = useMemo(
     () => plan?.tracks.filter((track) => track.lyrics.deletion?.requested && track.lyrics.deletion.state !== 'deleted').length || 0,
     [plan]
@@ -369,7 +378,15 @@ export default function App(): JSX.Element {
           </section>}
 
           <section className="review" aria-label="计划明细">
-            <div className="section-heading"><h2>计划明细</h2><span>{plan.tracks.length} 项</span></div>
+            <div className="section-heading">
+              <h2>计划明细</h2>
+              <span>{plan.tracks.length} 项</span>
+              <div className="review-stats" aria-label="计划明细统计">
+                <span className={issueCount ? 'metric-alert' : ''}>异常 {issueCount}</span>
+                <span className={pendingCount ? 'metric-review' : ''}>待处理 {pendingCount}</span>
+                <span className={conflictCount ? 'metric-alert' : ''}>冲突 {conflictCount}</span>
+              </div>
+            </div>
             <BatchToolbar
               selectedCount={selectedCount}
               onSelectAll={selectAllTracks}
