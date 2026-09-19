@@ -412,6 +412,10 @@ def test_partial_apply_refuses_blocked_tracks(tmp_path: Path) -> None:
     plan = MigrationPlan(config={}, tracks=[track], status="blocked")
     save_plan(plan, plan_path)
 
+    with pytest.raises(PlanExecutionError):
+        apply_plan(plan_path, data_root, track_ids={"trk_a"})
+    assert source.exists()
+
 
 def test_apply_verify_and_rollback_are_journal_backed(tmp_path: Path) -> None:
     source = tmp_path / "source.bin"
