@@ -1,4 +1,6 @@
 import { app } from 'electron'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 
@@ -38,6 +40,20 @@ function cliArguments(command: EngineCommand, values: EngineArgs): string[] {
   args.push('--data-root', dataRoot())
   return args
 }
+function prepareDecisions(values: EngineArgs): { args: EngineArgs; cleanup: () => void } {
+  const decisions = values.decisions
+  if (typeof decisions !== 'string' || !decisions.trim()) {
+    return { args: values, cleanup: () => undefined }
+  }
+  const directory = mkdtempSync(path.join(tmpdir(), 'music-organizer-decisions-'))
+  const file = path.join(directory, 'decisions.json')
+  writeFileSync(file, decisions, 'utf8')
+  return {
+    args: { ...values, decisions: file },
+    cleanup: () => rmSync(directory, { force: true, recursive: true })
+  }
+}
+
 
 export class EngineCommandError extends Error {
   constructor(
@@ -56,7 +72,8 @@ export async function runEngine(
 ): Promise<{ events: unknown[]; result: unknown }> {
   const engineRoot = path.join(projectRoot(), 'engine')
   const python = process.env.MUSIC_ORGANIZER_PYTHON || 'python'
-  const child = spawn(python, cliArguments(command, values), {
+  const prepared = prepareDecisions(values)
+  const child = spawn(python, cliArguments(command, prepared.args), {
     cwd: projectRoot(),
     env: {
       ...process.env,
@@ -91,7 +108,11 @@ export async function runEngine(
   })
 
   return await new Promise((resolve, reject) => {
-    child.once('error', (error) => reject(new EngineCommandError(error.message, events, null)))
+    child.once('error', (error) => {
+      prepared.cleanup()
+      reject(new EngineCommandError(error.message, events, null))
+    })
+      prepared.cleanup()
     child.once('close', (code) => {
       if (pending.trim()) {
         try {
