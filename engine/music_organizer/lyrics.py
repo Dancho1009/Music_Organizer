@@ -6,7 +6,7 @@ import unicodedata
 from pathlib import Path
 from typing import Any
 
-SCORE_VERSION = "lyrics-score-v2"
+SCORE_VERSION = "lyrics-score-v3"
 TIME_TAG_RE = re.compile(r"\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]")
 TIME_RE = re.compile(r"^\s*((?:\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\]\s*)+)(.*)$")
 HEADER_RE = re.compile(r"^\s*\[(?P<key>by|ti|ar|al|au|length|offset|re|ve|id|tool|kana|total|language):(?P<value>.*?)\]\s*$", re.IGNORECASE)
@@ -59,35 +59,34 @@ def _classify_text(text: str) -> str:
 
 
 def _score_match(headers: dict[str, str], audio_tags: dict[str, str | None] | None, audio_path: str | Path | None, lrc_path: str | Path) -> tuple[float, list[dict[str, Any]]]:
-    if not audio_tags and not audio_path:
-        return 0.75, []
     reasons: list[dict[str, Any]] = []
-    score = 0.5
+    # Missing optional metadata keeps a neutral score; only a real conflict is penalised.
+    score = 0.85
     title = _normalize(audio_tags.get("title")) if audio_tags else ""
     artist = _normalize(audio_tags.get("artist")) if audio_tags else ""
     lyric_title = _normalize(headers.get("ti", ""))
     lyric_artist = _normalize(headers.get("ar", ""))
     if lyric_title and title:
         if lyric_title == title:
-            score += 0.25
+            score += 0.10
         else:
-            score -= 0.25
-            reasons.append(_reason("title_mismatch", "manual_review", f"歌词标题“{headers.get('ti')}”与音频标题不匹配。", -0.25, lyrics_title=headers.get("ti"), audio_title=audio_tags.get("title") if audio_tags else None))
+            score -= 0.45
+            reasons.append(_reason("title_mismatch", "manual_review", f"歌词标题“{headers.get('ti')}”与音频标题不匹配。", -0.45, lyrics_title=headers.get("ti"), audio_title=audio_tags.get("title") if audio_tags else None))
     elif title and not lyric_title:
-        reasons.append(_reason("title_metadata_missing", "warning", "歌词文件没有歌曲标题元数据。", -0.05))
+        reasons.append(_reason("title_metadata_missing", "info", "歌词文件没有标题元数据（不影响评分）。", 0.0))
     if lyric_artist and artist:
         if lyric_artist == artist:
-            score += 0.2
+            score += 0.05
         else:
-            score -= 0.2
-            reasons.append(_reason("artist_mismatch", "manual_review", f"歌词艺人“{headers.get('ar')}”与音频艺人不匹配。", -0.2, lyrics_artist=headers.get("ar"), audio_artist=audio_tags.get("artist") if audio_tags else None))
+            score -= 0.35
+            reasons.append(_reason("artist_mismatch", "manual_review", f"歌词艺人“{headers.get('ar')}”与音频艺人不匹配。", -0.35, lyrics_artist=headers.get("ar"), audio_artist=audio_tags.get("artist") if audio_tags else None))
     elif artist and not lyric_artist:
-        reasons.append(_reason("artist_metadata_missing", "warning", "歌词文件没有艺人元数据。", -0.04))
+        reasons.append(_reason("artist_metadata_missing", "info", "歌词文件没有艺人元数据（不影响评分）。", 0.0))
     if audio_path and Path(audio_path).stem.casefold() == Path(lrc_path).stem.casefold():
-        score += 0.15
+        score += 0.05
     elif audio_path:
-        score -= 0.1
-        reasons.append(_reason("filename_mismatch", "warning", "歌词文件名与音频文件名不一致。", -0.1, audio=Path(audio_path).name, lyrics=Path(lrc_path).name))
+        score -= 0.10
+        reasons.append(_reason("filename_mismatch", "warning", "歌词文件名与音频文件名不一致。", -0.10, audio=Path(audio_path).name, lyrics=Path(lrc_path).name))
     return max(0.0, min(1.0, score)), reasons
 
 
@@ -201,6 +200,7 @@ def classify_lrc(path: str | Path, *, audio_tags: dict[str, str | None] | None =
     elif status == "suspect":
         confidence = min(confidence, 0.74)
     if severe_match:
+        confidence = min(confidence, 0.6)
         status = "manual_review"
     return {
         "status": status,

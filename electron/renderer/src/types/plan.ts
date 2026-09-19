@@ -12,6 +12,7 @@ export interface Issue {
   severity: 'blocked' | 'manual_review' | 'warning'
   message: string
   candidates?: string[]
+  affects_plan?: boolean
 }
 
 export interface LyricsReason {

@@ -45,7 +45,7 @@ def test_emits_structured_reasons_and_score_dimensions(tmp_path: Path) -> None:
 
     result = classify_lrc(path)
 
-    assert result["confidence_version"] == "lyrics-score-v2"
+    assert result["confidence_version"] == "lyrics-score-v3"
     assert set(result["scores"]) == {"format", "timing", "content", "match", "source"}
     reason_codes = {reason["code"] for reason in result["reasons"]}
     assert "non_monotonic_timestamps" in reason_codes
@@ -70,6 +70,33 @@ def test_flags_lyrics_duration_mismatch(tmp_path: Path) -> None:
     result = classify_lrc(path, audio_tags={"title": "Song", "artist": "Artist", "duration_seconds": 20.0}, audio_path=str(tmp_path / "Song.mp3"))
 
     assert "lyrics_duration_too_short" in {reason["code"] for reason in result["reasons"]}
+
+
+def test_missing_ti_ar_metadata_is_neutral(tmp_path: Path) -> None:
+    path = tmp_path / "Song.lrc"
+    body = "".join(f"[00:{i:02d}.00]第{i}句歌词内容\n" for i in range(1, 21))
+    path.write_text(body, encoding="utf-8")
+
+    result = classify_lrc(path, audio_tags={"title": "Song", "artist": "Artist", "duration_seconds": 600.0}, audio_path=str(tmp_path / "Song.mp3"))
+
+    assert result["status"] == "actual"
+    assert result["confidence"] >= 0.90
+    assert result["scores"]["match"] >= 0.85
+    severities = {reason["code"]: reason["severity"] for reason in result["reasons"]}
+    assert severities.get("title_metadata_missing") == "info"
+    assert severities.get("artist_metadata_missing") == "info"
+
+
+def test_metadata_conflict_caps_confidence(tmp_path: Path) -> None:
+    path = tmp_path / "Song.lrc"
+    body = "".join(f"[00:{i:02d}.00]第{i}句歌词内容\n" for i in range(1, 21))
+    path.write_text("[ti:Other Song]\n[ar:Wrong Artist]\n" + body, encoding="utf-8")
+
+    result = classify_lrc(path, audio_tags={"title": "Song", "artist": "Artist", "duration_seconds": 600.0}, audio_path=str(tmp_path / "Song.mp3"))
+
+    assert result["status"] == "manual_review"
+    assert result["confidence"] <= 0.60
+    assert {reason["code"] for reason in result["reasons"]} >= {"title_mismatch", "artist_mismatch"}
 
 
 def test_classifies_actual_lyrics_with_counts_and_confidence(tmp_path: Path) -> None:

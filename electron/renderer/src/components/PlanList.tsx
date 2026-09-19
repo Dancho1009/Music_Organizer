@@ -34,6 +34,12 @@ function reasonMessage(reason: LyricsReason | string): string {
   return typeof reason === 'string' ? reason : reason.message
 }
 
+const HIDDEN_REASON_CODES = new Set(['title_metadata_missing', 'artist_metadata_missing'])
+
+function visibleLyricsReasons(reasons: Array<LyricsReason | string> | undefined): Array<LyricsReason | string> {
+  return (reasons || []).filter((reason) => typeof reason === 'string' || !HIDDEN_REASON_CODES.has(reason.code))
+}
+
 function TrackRow({ track, decisions, selectedTracks, onToggleSelect, onOpenFolder, onOpenLyrics, onIgnoreLyrics, onSelectLyrics, onConfirmLyrics, onDeleteLyrics, onExclude }: Omit<PlanListProps, 'plan'> & { track: TrackPlan }): JSX.Element {
   const needsLyricsReview = track.issues.some((issue) => issue.code === 'lyrics_requires_review' || issue.code === 'missing_lrc')
   const canConfirmLyrics = track.issues.some((issue) => issue.code === 'lyrics_requires_review')
@@ -77,7 +83,7 @@ function TrackRow({ track, decisions, selectedTracks, onToggleSelect, onOpenFold
         ))}
         {track.lyrics.confidence_version && <div className="lyrics-preview">评分模型：{track.lyrics.confidence_version}</div>}
         {track.lyrics.scores && <div className="lyrics-preview">分项：{Object.entries(track.lyrics.scores).map(([key, value]) => `${key} ${Math.round(value * 100)}%`).join(' · ')}</div>}
-        {track.lyrics.reasons && track.lyrics.reasons.length > 0 && track.lyrics.reasons.map((reason, index) => (
+        {visibleLyricsReasons(track.lyrics.reasons).map((reason, index) => (
           <div className="lyrics-preview" key={`${track.track_id}-reason-${typeof reason === 'string' ? index : reason.code}`}>
             判定说明：{reasonMessage(reason)}
           </div>
