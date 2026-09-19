@@ -99,6 +99,8 @@ export interface PlanHistoryItem {
 export interface Verification {
   ok: boolean
   passed: number
+  pending?: number
+  complete?: boolean
   failed: number
   checks: Array<{ kind: string; source: string; destination: string; ok: boolean }>
 }

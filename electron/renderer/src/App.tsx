@@ -129,8 +129,12 @@ export default function App(): JSX.Element {
     [plan]
   )
   const isLyricsCleanupPlan = Boolean(plan?.config.lyrics_cleanup_only)
-  const canApply = plan?.status === 'ready' && !isLyricsCleanupPlan
-  const canVerify = Boolean(plan && (['applied', 'verify_failed', 'verified'].includes(plan.status) || (isLyricsCleanupPlan && plan.status === 'ready')))
+  const readyTrackIds = useMemo(
+    () => plan?.tracks.filter(isExecutableTrack).map((track) => track.track_id) || [],
+    [plan]
+  )
+  const canApply = Boolean(plan && readyTrackIds.length > 0 && !isLyricsCleanupPlan && ['ready', 'blocked', 'partially_applied'].includes(plan.status))
+  const canVerify = Boolean(plan && (['applied', 'partially_applied', 'verify_failed', 'verified'].includes(plan.status) || (isLyricsCleanupPlan && plan.status === 'ready')))
   const interrupted = history.find((item) => item.recovery)
   const visiblePlan = useMemo(() => {
     if (!plan) return null
@@ -218,9 +222,10 @@ export default function App(): JSX.Element {
   }
 
   async function apply(): Promise<void> {
-    if (!plan || !window.confirm('执行后会按计划移动或链接文件。是否继续？')) return
+    if (!plan || readyTrackIds.length === 0) return
+    if (!window.confirm(`将只执行 ${readyTrackIds.length} 个可执行项，其余条目保持不变。是否继续？`)) return
     if (!planPath) return
-    const value = await run('apply', { plan: planPath })
+    const value = await run('apply', { plan: planPath, 'track-ids': JSON.stringify(readyTrackIds) })
     const nextPlan = resultPlan(value)
     if (nextPlan) {
       setPlan(nextPlan)

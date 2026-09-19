@@ -66,7 +66,7 @@ def verify_plan(
     plan_path = Path(plan_path)
     plan = load_plan(plan_path)
     cleanup_only = bool(plan.config.get("lyrics_cleanup_only"))
-    allowed_statuses = {"applied", "verified", "verify_failed"}
+    allowed_statuses = {"applied", "partially_applied", "verified", "verify_failed"}
     if cleanup_only:
         allowed_statuses.add("ready")
     if plan.status not in allowed_statuses:
@@ -76,12 +76,29 @@ def verify_plan(
     save_plan(plan, plan_path)
     checks: list[dict[str, Any]] = []
     track_checks: list[dict[str, Any]] = []
+    pending_assets: list[dict[str, Any]] = []
     try:
         included_tracks = [track for track in plan.tracks if track.status != "excluded"]
         for current_index, track in enumerate(included_tracks, start=1):
             if track.status == "excluded":
                 continue
-            current = [_asset_check(track.track_id, asset) for asset in track.assets]
+            # Assets awaiting a later partial apply are reported as pending, not passed.
+            pending = [
+                {
+                    "track_id": track.track_id,
+                    "kind": asset.kind,
+                    "source": asset.source,
+                    "destination": asset.destination,
+                }
+                for asset in track.assets
+                if asset.status == "planned" and asset.action in {"move", "link"}
+            ]
+            pending_assets.extend(pending)
+            current = [
+                _asset_check(track.track_id, asset)
+                for asset in track.assets
+                if asset.status != "planned"
+            ]
             checks.extend(current)
             audio = next((asset for asset in track.assets if asset.kind == "audio"), None)
             lyrics = next((asset for asset in track.assets if asset.kind == "lrc"), None)
@@ -97,6 +114,8 @@ def verify_plan(
                     "track_id": track.track_id,
                     "relative_source": track.relative_source,
                     "lyrics_pair_matches": pair_ok,
+                    "pending": len(pending),
+                    "complete": not pending,
                     "ok": pair_ok and all(item["ok"] for item in current),
                 }
             )
@@ -119,6 +138,8 @@ def verify_plan(
             "checks": checks,
             "track_checks": track_checks,
             "passed": passed,
+            "pending": len(pending_assets),
+            "pending_assets": pending_assets,
             "failed": len(checks) - passed + sum(1 for item in track_checks if not item["ok"]),
             "by_kind": {
                 kind: {"passed": counts[kind], "total": totals[kind]}
@@ -126,6 +147,7 @@ def verify_plan(
             },
         }
         result["ok"] = result["failed"] == 0
+        result["complete"] = not pending_assets
         if report_path:
             atomic_write_json(report_path, result)
             result["report_path"] = str(Path(report_path))
@@ -136,7 +158,12 @@ def verify_plan(
             "verified_at": result["verified_at"],
             "report_path": result.get("report_path"),
         }
-        plan.status = "verified" if result["ok"] else "verify_failed"
+        if result["ok"] and result["complete"]:
+            plan.status = "verified"
+        elif result["ok"]:
+            plan.status = "partially_applied"
+        else:
+            plan.status = "verify_failed"
         save_plan(plan, plan_path)
         result["plan_status"] = plan.status
         if on_event:

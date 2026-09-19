@@ -7,7 +7,7 @@ export type EngineArgs = Record<string, string | boolean | undefined>
 
 const allowedArguments: Record<EngineCommand, Set<string>> = {
   plan: new Set(['source', 'flac-destination', 'mp3-destination', 'mode', 'decisions', 'parent-plan', 'lyrics-cleanup-only']),
-  apply: new Set(['plan']),
+  apply: new Set(['plan', 'track-ids']),
   rollback: new Set(['plan']),
   verify: new Set(['plan']),
   recover: new Set(['plan']),

@@ -32,6 +32,17 @@ def _decisions(value: str | None) -> dict[str, Any]:
     return data
 
 
+def _track_ids(value: str | None) -> set[str] | None:
+    if not value:
+        return None
+    data = json.loads(value)
+    if isinstance(data, list):
+        return {str(item) for item in data}
+    if isinstance(data, str):
+        return {part.strip() for part in data.split(",") if part.strip()}
+    raise ValueError("track-ids must be a JSON array or a comma separated string.")
+
+
 def _data_root(value: str) -> Path:
     root = Path(value).resolve()
     (root / "plans").mkdir(parents=True, exist_ok=True)
@@ -59,6 +70,8 @@ def build_parser() -> argparse.ArgumentParser:
         item = subparsers.add_parser(name)
         item.add_argument("--plan", required=True)
         item.add_argument("--data-root", required=True)
+        if name == "apply":
+            item.add_argument("--track-ids")
 
     cleanup = subparsers.add_parser("cleanup")
     cleanup.add_argument("--plan", required=True)
@@ -94,13 +107,19 @@ def run(argv: list[str] | None = None) -> int:
                 plan_version=parent.plan_version + 1 if parent else 1,
                 on_event=_write,
                 lyrics_cleanup_only=args.lyrics_cleanup_only,
+                data_root=str(root),
             )
             output = Path(args.output) if args.output else root / "plans" / f"{plan.plan_id}.json"
             save_plan(plan, output)
             _write({"event": "plan_created", "plan_path": str(output), "plan": plan.to_dict()})
             return 0
         if args.command == "apply":
-            plan = apply_plan(args.plan, _data_root(args.data_root), _write)
+            plan = apply_plan(
+                args.plan,
+                _data_root(args.data_root),
+                _write,
+                track_ids=_track_ids(args.track_ids),
+            )
             _write({"event": "result", "plan": plan.to_dict()})
             return 0
         if args.command == "rollback":

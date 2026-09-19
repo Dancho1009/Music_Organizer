@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import pytest
+
 
 from music_organizer.common import fast_fingerprint
 from music_organizer.cleanup import CleanupError, cleanup_plan
@@ -336,7 +338,79 @@ def test_embedded_cover_is_extracted_per_song(tmp_path: Path, monkeypatch) -> No
 
     cover_assets = [asset for track in plan.tracks for asset in track.assets if asset.kind == "cover"]
     assert plan.status == "ready"
-    assert len(cover_assets) == 1
+    assert len(cover_assets) == 2
+    # Original format is preserved and the cover is named after its own song.
+    assert {Path(asset.destination).name for asset in cover_assets} == {"track1.jpg", "track2.jpg"}
+    assert all(asset.action == "move" for asset in cover_assets)
+
+
+def test_partial_apply_only_moves_selected_tracks(tmp_path: Path) -> None:
+    plan_path = tmp_path / "plan.json"
+    data_root = tmp_path / "state"
+    tracks = []
+    for name in ("a", "b"):
+        source = tmp_path / f"{name}.bin"
+        source.write_bytes(f"payload-{name}".encode())
+        destination = tmp_path / "library" / f"{name}.bin"
+        asset = AssetPlan(
+            kind="audio",
+            source=str(source),
+            destination=str(destination),
+            fingerprint=fast_fingerprint(source),
+            action="move",
+        )
+        tracks.append(
+            TrackPlan(
+                track_id=f"trk_{name}",
+                source_audio=str(source),
+                relative_source=f"{name}.bin",
+                audio_format="flac",
+                tags={},
+                resolved={},
+                lyrics={"status": "ignored"},
+                assets=[asset],
+            )
+        )
+    # One track is blocked, so the whole plan is blocked and full apply would refuse.
+    tracks[1].status = "blocked"
+    plan = MigrationPlan(config={}, tracks=tracks, status="blocked")
+    save_plan(plan, plan_path)
+
+    partial = apply_plan(plan_path, data_root, track_ids={"trk_a"})
+
+    assert partial.status == "partially_applied"
+    assert (tmp_path / "library" / "a.bin").exists()
+    assert not (tmp_path / "library" / "b.bin").exists()
+    reloaded = load_plan(plan_path)
+    statuses = {track.track_id: track.assets[0].status for track in reloaded.tracks}
+    assert statuses == {"trk_a": "completed", "trk_b": "planned"}
+
+
+def test_partial_apply_refuses_blocked_tracks(tmp_path: Path) -> None:
+    plan_path = tmp_path / "plan.json"
+    data_root = tmp_path / "state"
+    source = tmp_path / "a.bin"
+    source.write_bytes(b"payload")
+    asset = AssetPlan(
+        kind="audio",
+        source=str(source),
+        destination=str(tmp_path / "library" / "a.bin"),
+        fingerprint=fast_fingerprint(source),
+        action="move",
+    )
+    track = TrackPlan(
+        track_id="trk_a",
+        source_audio=str(source),
+        relative_source="a.bin",
+        audio_format="flac",
+        tags={},
+        resolved={},
+        lyrics={"status": "ignored"},
+        assets=[asset],
+        status="blocked",
+    )
+    plan = MigrationPlan(config={}, tracks=[track], status="blocked")
+    save_plan(plan, plan_path)
 
 
 def test_apply_verify_and_rollback_are_journal_backed(tmp_path: Path) -> None:

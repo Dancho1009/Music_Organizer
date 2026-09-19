@@ -28,9 +28,14 @@ def _journal_path(plan: MigrationPlan, data_root: str | Path) -> Path:
     return Path(data_root) / "journals" / f"{plan.plan_id}.jsonl"
 
 
-def _actionable_assets(plan: MigrationPlan) -> list[tuple[str, AssetPlan]]:
+def _actionable_assets(
+    plan: MigrationPlan,
+    track_ids: set[str] | None = None,
+) -> list[tuple[str, AssetPlan]]:
     result: list[tuple[str, AssetPlan]] = []
     for track in plan.tracks:
+        if track_ids is not None and track.track_id not in track_ids:
+            continue
         for asset in track.assets:
             if asset.action in {"move", "link"} and asset.status == "planned":
                 result.append((track.track_id, asset))
@@ -41,13 +46,29 @@ def apply_plan(
     plan_path: str | Path,
     data_root: str | Path,
     on_event: EventCallback | None = None,
+    track_ids: set[str] | None = None,
 ) -> MigrationPlan:
     plan_path = Path(plan_path)
     plan = load_plan(plan_path)
-    if plan.status != "ready":
-        raise PlanExecutionError(f"Plan is not ready to apply: {plan.status}")
+    selected = set(track_ids) if track_ids is not None else None
+    if selected is None:
+        if plan.status != "ready":
+            raise PlanExecutionError(f"Plan is not ready to apply: {plan.status}")
+    else:
+        if not selected:
+            raise PlanExecutionError("No tracks selected for partial apply.")
+        targets = [track for track in plan.tracks if track.track_id in selected]
+        if not targets:
+            raise PlanExecutionError("Selected tracks are not part of this plan.")
+        # Partial apply may start from a blocked plan, but never for unsafe tracks.
+        allowed_statuses = {"ready", "reuse", "warning"}
+        unsafe = [track.track_id for track in targets if track.status not in allowed_statuses]
+        if unsafe:
+            raise PlanExecutionError(f"Refusing to apply blocked or manual_review tracks: {unsafe}")
+        if plan.status not in {"ready", "blocked"}:
+            raise PlanExecutionError(f"Plan cannot be partially applied from status: {plan.status}")
 
-    actions = _actionable_assets(plan)
+    actions = _actionable_assets(plan, selected)
     already_completed = sum(
         1 for track in plan.tracks for asset in track.assets if asset.status == "completed"
     )
@@ -128,7 +149,9 @@ def apply_plan(
             )
 
         plan.execution["finished_at"] = utc_now()
-        update_plan_status(plan_path, plan, "applied")
+        remaining = _actionable_assets(plan, None)
+        final_status = "partially_applied" if selected is not None and remaining else "applied"
+        update_plan_status(plan_path, plan, final_status)
         _emit(on_event, "apply_finished", plan_id=plan.plan_id, total=total_assets)
         return plan
     except Exception as exc:
