@@ -1,7 +1,7 @@
 import { app } from 'electron'
+import { spawn } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { spawn } from 'node:child_process'
 import path from 'node:path'
 
 export type EngineCommand = 'plan' | 'apply' | 'rollback' | 'verify' | 'recover' | 'resume' | 'cleanup' | 'delete-lyrics' | 'history'
@@ -40,6 +40,7 @@ function cliArguments(command: EngineCommand, values: EngineArgs): string[] {
   args.push('--data-root', dataRoot())
   return args
 }
+
 function prepareDecisions(values: EngineArgs): { args: EngineArgs; cleanup: () => void } {
   const decisions = values.decisions
   if (typeof decisions !== 'string' || !decisions.trim()) {
@@ -53,7 +54,6 @@ function prepareDecisions(values: EngineArgs): { args: EngineArgs; cleanup: () =
     cleanup: () => rmSync(directory, { force: true, recursive: true })
   }
 }
-
 
 export class EngineCommandError extends Error {
   constructor(
@@ -112,8 +112,8 @@ export async function runEngine(
       prepared.cleanup()
       reject(new EngineCommandError(error.message, events, null))
     })
-      prepared.cleanup()
     child.once('close', (code) => {
+      prepared.cleanup()
       if (pending.trim()) {
         try {
           const event = JSON.parse(pending)

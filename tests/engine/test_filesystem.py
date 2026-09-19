@@ -11,8 +11,11 @@ from music_organizer.filesystem import FileOperationError, link_file, move_file
 
 
 def test_cross_volume_move_keeps_content_and_removes_source() -> None:
+    # Destination must live on a different volume than TEMP; derive it from the
+    # repository location so the test survives the checkout being moved.
+    repo_drive = Path(__file__).resolve().drive
     with tempfile.TemporaryDirectory(dir=os.environ["TEMP"]) as source_dir, tempfile.TemporaryDirectory(
-        dir=r"D:\Utilits\Music_Organizer"
+        dir=f"{repo_drive}\\"
     ) as destination_dir:
         source = Path(source_dir) / "source.bin"
         destination = Path(destination_dir) / "nested" / "target.bin"
