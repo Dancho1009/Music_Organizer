@@ -66,7 +66,7 @@ function TrackRow({ track, decisions, selectedTracks, onToggleSelect, onOpenFold
         </div>
         <div className="track-meta">
           <span>{track.audio_format.toUpperCase()}</span>
-          <span>{track.resolved.main_artist || '歌词清理'}</span>
+          <span>{track.resolved.main_artist || '检查'}</span>
           <span>{track.resolved.album || '不迁移音频'}</span>
           <span>歌词：{track.lyrics.status}</span>
           {typeof track.lyrics.confidence === 'number' && <span>可信度：{Math.round(track.lyrics.confidence * 100)}%</span>}

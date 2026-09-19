@@ -191,7 +191,7 @@ export default function App(): JSX.Element {
 
   async function createPlan(): Promise<void> {
     if (!source || (!lyricsCleanupOnly && !flacDestination && !mp3Destination)) {
-      setNotice(lyricsCleanupOnly ? '请填写歌词清理源目录。' : '请填写源目录，以及 FLAC 或 MP3 中至少一个目标目录。')
+      setNotice(lyricsCleanupOnly ? '请填写检查源目录。' : '请填写源目录，以及 FLAC 或 MP3 中至少一个目标目录。')
       return
     }
     const value = await run('plan', {
@@ -382,8 +382,8 @@ export default function App(): JSX.Element {
         <div className="header-status"><ShieldCheck size={18} />计划、验证、回滚</div>
       </header>
 
-      <section className="configuration" aria-label={lyricsCleanupOnly ? '歌词清理目录' : '迁移目录'}>
-        <div className="section-heading"><FolderTree size={19} /><h2>{lyricsCleanupOnly ? '歌词清理' : '迁移目录'}</h2></div>
+      <section className="configuration" aria-label={lyricsCleanupOnly ? '检查目录' : '迁移目录'}>
+        <div className="section-heading"><FolderTree size={19} /><h2>{lyricsCleanupOnly ? '检查' : '迁移目录'}</h2></div>
         <div className="path-grid">
           <PathField label="源目录" value={source} placeholder={String.raw`例如 D:\Music 或 \\server\share\music`} onChange={setSource} onBrowse={() => choose(setSource)} />
           {!lyricsCleanupOnly && <PathField label="FLAC 目标目录（可选）" value={flacDestination} placeholder="按 主艺术家\\完整专辑名 归档" onChange={setFlacDestination} onBrowse={() => choose(setFlacDestination)} />}
@@ -393,14 +393,14 @@ export default function App(): JSX.Element {
           <div className="configuration-options">
             <div className="segmented" aria-label="工作模式">
               <button type="button" className={!lyricsCleanupOnly ? 'selected' : ''} onClick={() => setLyricsCleanupOnly(false)}>迁移整理</button>
-              <button type="button" className={lyricsCleanupOnly ? 'selected' : ''} onClick={() => setLyricsCleanupOnly(true)}>仅清理无效歌词</button>
+              <button type="button" className={lyricsCleanupOnly ? 'selected' : ''} onClick={() => setLyricsCleanupOnly(true)}>检查</button>
             </div>
             {!lyricsCleanupOnly && <div className="segmented" aria-label="文件操作方式">
               <button type="button" className={mode === 'move' ? 'selected' : ''} onClick={() => setMode('move')}>移动</button>
               <button type="button" className={mode === 'link' ? 'selected' : ''} onClick={() => setMode('link')}>硬链接</button>
             </div>}
           </div>
-          <button type="button" className="primary-button" disabled={busy} onClick={createPlan}><ClipboardCheck size={17} />{lyricsCleanupOnly ? '扫描歌词' : '生成迁移计划'}</button>
+          <button type="button" className="primary-button" disabled={busy} onClick={createPlan}><ClipboardCheck size={17} />{lyricsCleanupOnly ? '开始检查' : '生成迁移计划'}</button>
         </div>
       </section>
 
