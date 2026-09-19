@@ -241,8 +241,8 @@ export default function App(): JSX.Element {
     const result = resultVerification(value)
     if (result) {
       setVerification(result)
-      setPlan({ ...plan, status: result.ok ? 'verified' : 'verify_failed' })
-      setNotice(result.ok ? (isLyricsCleanupPlan ? '歌词清理计划验证通过。' : '验证通过。') : `验证失败：${result.failed} 项。`)
+      setPlan({ ...plan, status: result.ok ? (result.complete === false ? 'partially_applied' : 'verified') : 'verify_failed' })
+      setNotice(!result.ok ? `验证失败：${result.failed} 项。` : result.complete === false ? `已执行部分验证通过，仍有 ${result.pending || 0} 项待执行。` : (isLyricsCleanupPlan ? '检查计划验证通过。' : '验证通过。'))
       void refreshHistory()
     }
   }
@@ -435,8 +435,8 @@ export default function App(): JSX.Element {
               {!isLyricsCleanupPlan && <label className="review-confirm"><input type="checkbox" checked={reviewConfirmed} onChange={(event) => setReviewConfirmed(event.target.checked)} />我已检查异常项目</label>}
               <div className="plan-actions">
                 {!isLyricsCleanupPlan && <button type="button" disabled={!canApply || !reviewConfirmed || busy} className="primary-button" onClick={apply}><CheckCircle2 size={17} />执行计划</button>}
-                <button type="button" disabled={busy || !canVerify} onClick={verify}><ShieldCheck size={17} />{isLyricsCleanupPlan ? '验证清理计划' : '验证'}</button>
-                {!isLyricsCleanupPlan && <button type="button" disabled={busy || !['applied', 'failed', 'verify_failed', 'verified'].includes(plan.status)} onClick={rollback}><RotateCcw size={17} />回滚</button>}
+                <button type="button" disabled={busy || !canVerify} onClick={verify}><ShieldCheck size={17} />{isLyricsCleanupPlan ? '验证检查' : '验证'}</button>
+                {!isLyricsCleanupPlan && <button type="button" disabled={busy || !['applied', 'partially_applied', 'failed', 'verify_failed', 'verified'].includes(plan.status)} onClick={rollback}><RotateCcw size={17} />回滚</button>}
                 {!isLyricsCleanupPlan && <button type="button" disabled={busy || plan.status !== 'verified'} onClick={inspectCleanup}><Eraser size={17} />检查清理</button>}
                 {pendingLyricsDeletion > 0 && <button type="button" disabled={busy || plan.status !== 'verified'} onClick={inspectLyricsDeletion}><Trash2 size={17} />检查异常歌词</button>}
               </div>
