@@ -7,12 +7,12 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .common import (
+    artist_directory_name,
     AUDIO_EXTENSIONS,
     atomic_write_json,
     fingerprint,
     fast_fingerprint,
     is_within,
-    main_artist,
     path_key,
     read_json,
     safe_component,
@@ -147,16 +147,20 @@ def _destination_for(
         issues.append(_issue("missing_album", "blocked", "缺少 album 标签。"))
     album_dir = safe_component(album, "未知专辑")
 
-    artist_value = tags.get("albumartist") or tags.get("artist")
+    artist_value = tags.get("artist")
+    artist_source = "artist" if artist_value else ""
     if not artist_value:
-        issues.append(_issue("missing_artist", "blocked", "音频缺少 albumartist 与 artist 标签。"))
-    artist_dir = main_artist(artist_value)
+        artist_value = tags.get("albumartist")
+        artist_source = "albumartist" if artist_value else ""
+    if not artist_value:
+        issues.append(_issue("missing_artist", "blocked", "音频缺少 artist 与 albumartist 标签。"))
+    artist_dir = artist_directory_name(artist_value)
     destination_root = flac_dest if suffix == ".flac" else mp3_dest
     destination_dir = os.path.join(destination_root or "", artist_dir, album_dir)
     resolved = {
         "main_artist": artist_dir,
         "album": album_dir,
-        "main_artist_source": "albumartist" if tags.get("albumartist") else "artist",
+        "main_artist_source": artist_source,
     }
     return destination_dir, resolved, issues
 

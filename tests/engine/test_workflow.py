@@ -31,15 +31,16 @@ def test_planner_routes_flac_and_only_exact_actual_lrc(tmp_path: Path, monkeypat
     monkeypatch.setattr("music_organizer.planner.scan_source", lambda _: [scanned])
     monkeypatch.setattr(
         "music_organizer.planner.read_tags",
-        lambda _: {"album": "Album: One", "albumartist": "Artist A / Artist B", "artist": "Artist A"},
+        lambda _: {"album": "Album: One", "albumartist": "Album Artist", "artist": "Artist A / Artist B"},
     )
 
     plan = build_plan(str(source_root), str(tmp_path / "flac"), str(tmp_path / "mp3"))
 
     assert plan.status == "ready"
     track = plan.tracks[0]
-    assert track.resolved["main_artist"] == "Artist A"
-    assert Path(track.assets[0].destination).parent == tmp_path / "flac" / "Artist A" / "Album_ One"
+    assert track.resolved["main_artist"] == "Artist A _ Artist B"
+    assert track.resolved["main_artist_source"] == "artist"
+    assert Path(track.assets[0].destination).parent == tmp_path / "flac" / "Artist A _ Artist B" / "Album_ One"
     assert [asset.kind for asset in track.assets] == ["audio", "lrc"]
 
 
@@ -85,7 +86,7 @@ def test_planner_routes_mp3_by_main_artist_and_album(tmp_path: Path, monkeypatch
     )
     monkeypatch.setattr(
         "music_organizer.planner.read_tags",
-        lambda _: {"album": "Album", "albumartist": "Artist A / Artist B", "artist": "Artist A"},
+        lambda _: {"album": "Album", "albumartist": "Artist", "artist": "Artist", "title": "Song", "duration_seconds": 180.0},
     )
 
     plan = build_plan(str(source_root), None, str(mp3_root))

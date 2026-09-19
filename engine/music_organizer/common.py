@@ -11,9 +11,6 @@ from typing import Any
 
 AUDIO_EXTENSIONS = {".flac", ".mp3"}
 WINDOWS_INVALID_CHARS = re.compile(r'[<>:"/\\\\|?*]')
-EXPLICIT_ARTIST_SEPARATOR = re.compile(
-    r"\s*(?:/|;|；|&|\bfeat\.?\b|\bft\.?\b)\s*", re.IGNORECASE
-)
 
 
 def utc_now() -> str:
@@ -30,11 +27,8 @@ def safe_component(value: str | None, fallback: str) -> str:
     return cleaned or fallback
 
 
-def main_artist(value: str | None) -> str:
-    if not value or not value.strip():
-        return "未知艺术家"
-    first = EXPLICIT_ARTIST_SEPARATOR.split(value.strip(), maxsplit=1)[0].strip()
-    return safe_component(first, "未知艺术家")
+def artist_directory_name(value: str | None) -> str:
+    return safe_component(value, "未知艺术家")
 
 
 def sha256_file(path: str | Path, chunk_size: int = 1024 * 1024) -> str:
