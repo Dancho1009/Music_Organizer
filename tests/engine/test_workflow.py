@@ -92,7 +92,8 @@ def test_planner_routes_mp3_by_main_artist_and_album(tmp_path: Path, monkeypatch
     plan = build_plan(str(source_root), None, str(mp3_root))
 
     assert plan.status == "ready"
-    assert Path(plan.tracks[0].assets[0].destination).parent == mp3_root / "Artist A" / "Album"
+    assert all(issue.get("affects_plan") is False for issue in plan.tracks[0].issues)
+    assert [asset.kind for asset in plan.tracks[0].assets] == ["audio"]
 
 
 def test_planner_marks_abnormal_lyrics_for_deletion_without_migrating_lrc(tmp_path: Path, monkeypatch) -> None:

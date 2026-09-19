@@ -34,6 +34,10 @@ def _track_id(relative_audio: str) -> str:
 def _issue(code: str, severity: str, message: str, **extra: Any) -> dict[str, Any]:
     return {"code": code, "severity": severity, "message": message, **extra}
 
+def _lyrics_issue(code: str, severity: str, message: str, **extra: Any) -> dict[str, Any]:
+    return _issue(code, severity, message, affects_plan=False, **extra)
+
+
 
 def _decision_for(decisions: dict[str, Any], track_id: str) -> dict[str, Any]:
     value = decisions.get(track_id, {})
@@ -67,7 +71,7 @@ def _lyrics_for_track(
 
     if not selected:
         issues.append(
-            _issue(
+            _lyrics_issue(
                 "missing_lrc",
                 "blocked",
                 "未找到同目录、同 stem 的 LRC。",
@@ -114,7 +118,7 @@ def _lyrics_for_track(
 
     if info["status"] != "actual":
         issues.append(
-            _issue(
+            _lyrics_issue(
                 "lyrics_requires_review",
                 "manual_review",
                 "歌词不是已确认的实际歌词，需要人工确认或忽略。",
@@ -130,7 +134,7 @@ def _lyrics_for_track(
         code = str(reason.get("code", "lyrics_review_required"))
         if code in existing_codes:
             continue
-        issues.append(_issue(code, str(reason["severity"]), str(reason.get("message", "歌词需要人工确认。")), confidence=info.get("confidence"), reason=reason))
+        issues.append(_lyrics_issue(code, str(reason["severity"]), str(reason.get("message", "歌词需要人工确认。")), confidence=info.get("confidence"), reason=reason))
     return selected, info, issues
 
 
@@ -188,7 +192,7 @@ def _check_existing_asset(asset: AssetPlan, is_cover: bool) -> dict[str, Any] | 
 def _set_track_status(track: TrackPlan) -> None:
     if track.status == "excluded":
         return
-    severities = {item["severity"] for item in track.issues}
+    severities = {item["severity"] for item in track.issues if item.get("affects_plan", True)}
     if "blocked" in severities:
         track.status = "blocked"
     elif "manual_review" in severities:

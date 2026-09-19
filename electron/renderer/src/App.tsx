@@ -10,8 +10,36 @@ import type { LyricsDeletionPreview, LyricsReason, MigrationPlan, PlanHistoryIte
 
 type Decisions = Record<string, Record<string, string | boolean>>
 type CleanupPreview = { count: number; remaining: { counts: Record<string, number> }; empty_directories: string[] }
-type TrackFilter = 'all' | 'blocked' | 'manual_review' | 'warning'
+type TrackFilter = 'all' | 'issue' | 'ready' | 'lyrics_review' | 'blocked' | 'manual_review' | 'warning'
 
+const EXECUTABLE_STATUSES = new Set(['ready', 'warning', 'reuse'])
+
+function hasPendingAssets(track: TrackPlan): boolean {
+  return track.assets.some((asset) => (asset.action === 'move' || asset.action === 'link') && asset.status === 'planned')
+}
+
+function isExecutableTrack(track: TrackPlan): boolean {
+  return EXECUTABLE_STATUSES.has(track.status) && hasPendingAssets(track)
+}
+
+// Issues flagged with affects_plan=false never block the migration; they are
+// informational and are surfaced through their own filter instead.
+function hasNonPlanIssue(track: TrackPlan): boolean {
+  return track.issues.some((issue) => issue.affects_plan === false)
+}
+
+// Aggregate view: every track carrying at least one issue, blocking or not.
+function hasAnyIssue(track: TrackPlan): boolean {
+  return track.issues.length > 0
+}
+
+function matchesTrackFilter(track: TrackPlan, filter: TrackFilter): boolean {
+  if (filter === 'all') return true
+  if (filter === 'issue') return hasAnyIssue(track)
+  if (filter === 'ready') return isExecutableTrack(track)
+  if (filter === 'lyrics_review') return hasNonPlanIssue(track)
+  return track.status === filter
+}
 const HIGH_CONFIDENCE_THRESHOLD = 0.85
 
 function normalizeLyricsReasons(reasons: Array<LyricsReason | string> | undefined): LyricsReason[] {
@@ -20,7 +48,17 @@ function normalizeLyricsReasons(reasons: Array<LyricsReason | string> | undefine
 
 function isHighConfidenceTrack(track: TrackPlan): boolean {
   const reasons = normalizeLyricsReasons(track.lyrics.reasons)
-  return track.lyrics.confidence_version === 'lyrics-score-v2' && track.lyrics.status === 'actual' && typeof track.lyrics.confidence === 'number' && track.lyrics.confidence > HIGH_CONFIDENCE_THRESHOLD && !reasons.some((reason) => reason.severity === 'manual_review' || reason.severity === 'blocked')
+  const hasPlanBlocker = track.issues.some(
+    (issue) => issue.affects_plan !== false && (issue.severity === 'blocked' || issue.severity === 'manual_review')
+  )
+  return (
+    track.lyrics.confidence_version === 'lyrics-score-v3'
+    && track.lyrics.status === 'actual'
+    && typeof track.lyrics.confidence === 'number'
+    && track.lyrics.confidence > HIGH_CONFIDENCE_THRESHOLD
+    && !hasPlanBlocker
+    && !reasons.some((reason) => reason.severity === 'manual_review' || reason.severity === 'blocked')
+  )
 }
 
 function resultPlan(value: unknown): MigrationPlan | null {
@@ -71,15 +109,21 @@ export default function App(): JSX.Element {
 
   const blocked = useMemo(() => plan?.summary.blocked || 0, [plan])
   const reviewed = useMemo(() => plan?.summary.manual_review || 0, [plan])
-  const issueCount = useMemo(() => plan?.tracks.filter((track) => track.issues.length > 0).length || 0, [plan])
-  const pendingCount = useMemo(
-    () => plan?.tracks.filter((track) => track.status === 'blocked' || track.status === 'manual_review').length || 0,
-    [plan]
-  )
-  const conflictCount = useMemo(
-    () => plan?.tracks.filter((track) => track.issues.some((issue) => issue.code === 'different_destination_file' || issue.code === 'source_asset_multiple_destinations')).length || 0,
-    [plan]
-  )
+  // Counts share the filter predicates so every displayed number has a matching tab.
+  const filterCounts = useMemo(() => {
+    const tracks = (plan?.tracks || []).filter(
+      (track) => showHighConfidenceTracks || !isHighConfidenceTrack(track)
+    )
+    return {
+      all: tracks.length,
+      issue: tracks.filter((track) => matchesTrackFilter(track, 'issue')).length,
+      ready: tracks.filter((track) => matchesTrackFilter(track, 'ready')).length,
+      lyrics_review: tracks.filter((track) => matchesTrackFilter(track, 'lyrics_review')).length,
+      blocked: tracks.filter((track) => matchesTrackFilter(track, 'blocked')).length,
+      manual_review: tracks.filter((track) => matchesTrackFilter(track, 'manual_review')).length,
+      warning: tracks.filter((track) => matchesTrackFilter(track, 'warning')).length
+    }
+  }, [plan, showHighConfidenceTracks])
   const pendingLyricsDeletion = useMemo(
     () => plan?.tracks.filter((track) => track.lyrics.deletion?.requested && track.lyrics.deletion.state !== 'deleted').length || 0,
     [plan]
@@ -93,7 +137,7 @@ export default function App(): JSX.Element {
     return {
       ...plan,
       tracks: plan.tracks.filter((track) => {
-        const matchesStatus = trackFilter === 'all' || track.status === trackFilter
+        const matchesStatus = matchesTrackFilter(track, trackFilter)
         const matchesConfidence = showHighConfidenceTracks || !isHighConfidenceTrack(track)
         return matchesStatus && matchesConfidence
       })
@@ -102,8 +146,7 @@ export default function App(): JSX.Element {
 
   const hiddenHighConfidenceCount = useMemo(
     () => plan?.tracks.filter((track) => {
-      const matchesStatus = trackFilter === 'all' || track.status === trackFilter
-      return matchesStatus && isHighConfidenceTrack(track)
+      return matchesTrackFilter(track, trackFilter) && isHighConfidenceTrack(track)
     }).length || 0,
     [plan, trackFilter]
   )
@@ -418,13 +461,8 @@ export default function App(): JSX.Element {
           <section className="review" aria-label="计划明细">
             <div className="section-heading">
               <h2>计划明细</h2>
-              <span>显示 {visiblePlan?.tracks.length || 0} / {plan.tracks.length} 项</span>
-              {!showHighConfidenceTracks && hiddenHighConfidenceCount > 0 && <span>隐藏高可信度歌词 {hiddenHighConfidenceCount} 项</span>}
-              <div className="review-stats" aria-label="计划明细统计">
-                <span className={issueCount ? 'metric-alert' : ''}>异常 {issueCount}</span>
-                <span className={pendingCount ? 'metric-review' : ''}>待处理 {pendingCount}</span>
-                <span className={conflictCount ? 'metric-alert' : ''}>冲突 {conflictCount}</span>
-              </div>
+              <span>显示 {filterCounts[trackFilter]} / {plan.tracks.length} 项</span>
+              {!showHighConfidenceTracks && hiddenHighConfidenceCount > 0 && <span>另隐藏高可信度歌词 {hiddenHighConfidenceCount} 项</span>}
             </div>
             <BatchToolbar
               selectedCount={selectedCount}
@@ -436,7 +474,7 @@ export default function App(): JSX.Element {
             />
             <div className="review-filters" aria-label="筛选计划明细">
               <div className="filter-tabs">
-                {(['all', 'blocked', 'manual_review', 'warning'] as const).map((value) => <button type="button" className={trackFilter === value ? 'selected' : ''} key={value} onClick={() => updateTrackFilter(value)}>{value === 'all' ? '全部' : value === 'blocked' ? '阻断' : value === 'manual_review' ? '待确认' : '提示'}</button>)}
+                {(['all', 'issue', 'ready', 'blocked', 'lyrics_review', 'manual_review', 'warning'] as const).map((value) => <button type="button" className={trackFilter === value ? 'selected' : ''} key={value} onClick={() => updateTrackFilter(value)}>{value === 'all' ? '全部' : value === 'issue' ? '有异常' : value === 'ready' ? '可执行' : value === 'blocked' ? '阻断' : value === 'lyrics_review' ? '歌词待确认' : value === 'manual_review' ? '待确认' : '提示'} {filterCounts[value]}</button>)}
               </div>
               <label className="confidence-visibility-toggle">
                 <input type="checkbox" checked={showHighConfidenceTracks} onChange={(event) => updateShowHighConfidenceTracks(event.target.checked)} />
