@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import tempfile
 import os
 from collections import Counter, defaultdict
 from pathlib import Path
+from uuid import uuid4
 from typing import Any, Callable
 
 from .common import (
@@ -23,6 +25,7 @@ from .common import (
 from .lyrics import classify_lrc
 from .models import AssetPlan, MigrationPlan, TrackPlan
 from .scanner import ScannedAudio, scan_source
+from .covers import embedded_cover
 from .tags import read_tags
 
 
@@ -168,6 +171,32 @@ def _destination_for(
     }
     return destination_dir, resolved, issues
 
+def _embedded_cover_asset(
+    audio_path: str,
+    destination_dir: str,
+    track_id: str,
+    staging_root: Path,
+) -> AssetPlan | None:
+    """Write the audio's own embedded cover verbatim, keeping its original format."""
+    embedded = embedded_cover(audio_path)
+    if embedded is None:
+        return None
+    data, extension = embedded
+    try:
+        staged = staging_root / f"{track_id}{extension}"
+        staged.parent.mkdir(parents=True, exist_ok=True)
+        staged.write_bytes(data)
+    except OSError:
+        return None
+    return AssetPlan(
+        kind="cover",
+        source=str(staged),
+        destination=os.path.join(destination_dir, f"{Path(audio_path).stem}{extension}"),
+        fingerprint=fast_fingerprint(staged),
+        action="move",
+    )
+
+
 
 def _check_existing_asset(asset: AssetPlan, is_cover: bool) -> dict[str, Any] | None:
     if not os.path.exists(asset.destination):
@@ -179,8 +208,8 @@ def _check_existing_asset(asset: AssetPlan, is_cover: bool) -> dict[str, Any] | 
     if is_cover:
         asset.action = "skip"
         asset.status = "skipped"
-        asset.note = "目标已有不同封面，保留目标封面。"
-        return _issue("different_cover", "warning", "目标已有不同 cover.ico，未覆盖。")
+        asset.note = "目标已有同名封面，保留目标封面。"
+        return _issue("different_cover", "warning", "目标已有同名封面文件，未覆盖。")
     return _issue(
         "different_destination_file",
         "blocked",
@@ -227,20 +256,6 @@ def _add_internal_collisions(tracks: list[TrackPlan]) -> None:
                 )
 
 
-def _deduplicate_shared_covers(tracks: list[TrackPlan]) -> None:
-    seen: set[tuple[str, str]] = set()
-    for track in tracks:
-        unique_assets: list[AssetPlan] = []
-        for asset in track.assets:
-            key = (path_key(asset.source), path_key(asset.destination))
-            if asset.kind == "cover" and key in seen:
-                continue
-            unique_assets.append(asset)
-            if asset.kind == "cover":
-                seen.add(key)
-        track.assets = unique_assets
-
-
 def _add_source_collisions(tracks: list[TrackPlan], mode: str) -> None:
     if mode != "move":
         return
@@ -279,6 +294,7 @@ def build_plan(
     parent_plan_id: str | None = None,
     plan_version: int = 1,
     on_event: Callable[[dict[str, Any]], None] | None = None,
+    data_root: str | None = None,
     lyrics_cleanup_only: bool = False,
 ) -> MigrationPlan:
     if mode not in {"move", "link"}:
@@ -297,6 +313,9 @@ def build_plan(
     if lyrics_cleanup_only:
         flac_dest = None
         mp3_dest = None
+    # Staging path only; the directory is created when a cover is actually written.
+    staging_base = Path(data_root) / "covers" if data_root else Path(tempfile.gettempdir()) / "music-organizer-covers"
+    staging_root = staging_base / uuid4().hex
     decisions = decisions or {}
     tracks: list[TrackPlan] = []
     scanned = scan_source(source)
@@ -378,16 +397,9 @@ def build_plan(
                         action=mode,
                     )
                 )
-            if item.cover:
-                assets.append(
-                    AssetPlan(
-                        kind="cover",
-                        source=item.cover,
-                        destination=os.path.join(destination_dir, "cover.ico"),
-                        fingerprint=fast_fingerprint(item.cover),
-                        action=mode,
-                    )
-                )
+            cover_asset = _embedded_cover_asset(audio_path, destination_dir, track_id, staging_root)
+            if cover_asset is not None:
+                assets.append(cover_asset)
 
         for asset in assets:
             existing_issue = _check_existing_asset(asset, asset.kind == "cover")
@@ -426,7 +438,6 @@ def build_plan(
                     }
                 )
 
-    _deduplicate_shared_covers(tracks)
     _add_internal_collisions(tracks)
     _add_source_collisions(tracks, mode)
     for track in tracks:

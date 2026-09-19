@@ -26,7 +26,6 @@ def test_planner_routes_flac_and_only_exact_actual_lrc(tmp_path: Path, monkeypat
         relative_audio="track.flac",
         lrc=str(lrc),
         lrc_candidates=[],
-        cover=None,
     )
     monkeypatch.setattr("music_organizer.planner.scan_source", lambda _: [scanned])
     monkeypatch.setattr(
@@ -57,7 +56,7 @@ def test_planner_blocks_hard_links_across_filesystems(tmp_path: Path, monkeypatc
     lrc.write_text("[00:01.00]first lyric\n[00:02.00]second lyric\n", encoding="utf-8")
     monkeypatch.setattr(
         "music_organizer.planner.scan_source",
-        lambda _: [ScannedAudio(str(audio), "track.mp3", str(lrc), [], None)],
+        lambda _: [ScannedAudio(str(audio), "track.mp3", str(lrc), [])],
     )
     monkeypatch.setattr(
         "music_organizer.planner.read_tags",
@@ -82,7 +81,53 @@ def test_planner_routes_mp3_by_main_artist_and_album(tmp_path: Path, monkeypatch
     lrc.write_text("[00:01.00]first lyric\n[00:02.00]second lyric\n", encoding="utf-8")
     monkeypatch.setattr(
         "music_organizer.planner.scan_source",
-        lambda _: [ScannedAudio(str(audio), "track.mp3", str(lrc), [], None)],
+        lambda _: [ScannedAudio(str(audio), "track.mp3", str(lrc), [])],
+    )
+    monkeypatch.setattr(
+        "music_organizer.planner.read_tags",
+        lambda _: {"album": "Album", "albumartist": "Album Artist", "artist": "Artist A feat. Artist B"},
+    )
+
+    plan = build_plan(str(source_root), None, str(mp3_root))
+
+    assert plan.status == "ready"
+    assert Path(plan.tracks[0].assets[0].destination).parent == mp3_root / "Artist A feat. Artist B" / "Album"
+
+
+def test_planner_falls_back_to_albumartist_when_artist_missing(tmp_path: Path, monkeypatch) -> None:
+    source_root = tmp_path / "source"
+    mp3_root = tmp_path / "mp3"
+    source_root.mkdir()
+    mp3_root.mkdir()
+    audio = source_root / "track.mp3"
+    audio.write_bytes(b"audio")
+    monkeypatch.setattr(
+        "music_organizer.planner.scan_source",
+        lambda _: [ScannedAudio(str(audio), "track.mp3", None, [])],
+    )
+    monkeypatch.setattr(
+        "music_organizer.planner.read_tags",
+        lambda _: {"album": "Album", "albumartist": "Album Artist", "artist": None},
+    )
+
+    plan = build_plan(str(source_root), None, str(mp3_root))
+
+    assert plan.tracks[0].resolved["main_artist"] == "Album Artist"
+    assert plan.tracks[0].resolved["main_artist_source"] == "albumartist"
+
+
+def test_lyrics_quality_issues_do_not_block_migration_plan(tmp_path: Path, monkeypatch) -> None:
+    source_root = tmp_path / "source"
+    mp3_root = tmp_path / "mp3"
+    source_root.mkdir()
+    mp3_root.mkdir()
+    audio = source_root / "track.mp3"
+    lrc = source_root / "track.lrc"
+    audio.write_bytes(b"audio")
+    lrc.write_text("[ti:Other Song]\n[ar:Wrong Artist]\n[00:01.00]only one line\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "music_organizer.planner.scan_source",
+        lambda _: [ScannedAudio(str(audio), "track.mp3", str(lrc), [])],
     )
     monkeypatch.setattr(
         "music_organizer.planner.read_tags",
@@ -95,6 +140,51 @@ def test_planner_routes_mp3_by_main_artist_and_album(tmp_path: Path, monkeypatch
     assert all(issue.get("affects_plan") is False for issue in plan.tracks[0].issues)
     assert [asset.kind for asset in plan.tracks[0].assets] == ["audio"]
 
+def test_missing_lyrics_does_not_block_migration_plan(tmp_path: Path, monkeypatch) -> None:
+    source_root = tmp_path / "source"
+    mp3_root = tmp_path / "mp3"
+    source_root.mkdir()
+    mp3_root.mkdir()
+    audio = source_root / "track.mp3"
+    audio.write_bytes(b"audio")
+    monkeypatch.setattr(
+        "music_organizer.planner.scan_source",
+        lambda _: [ScannedAudio(str(audio), "track.mp3", None, [])],
+    )
+    monkeypatch.setattr(
+        "music_organizer.planner.read_tags",
+        lambda _: {"album": "Album", "albumartist": "Artist", "artist": "Artist"},
+    )
+
+    plan = build_plan(str(source_root), None, str(mp3_root))
+
+    assert plan.status == "ready"
+    assert any(issue["code"] == "missing_lrc" and issue.get("affects_plan") is False for issue in plan.tracks[0].issues)
+    assert [asset.kind for asset in plan.tracks[0].assets] == ["audio"]
+
+
+def test_destination_conflict_still_blocks_migration_plan(tmp_path: Path, monkeypatch) -> None:
+    source_root = tmp_path / "source"
+    mp3_root = tmp_path / "mp3"
+    source_root.mkdir()
+    (mp3_root / "Artist" / "Album").mkdir(parents=True)
+    audio = source_root / "track.mp3"
+    audio.write_bytes(b"audio")
+    (mp3_root / "Artist" / "Album" / "track.mp3").write_bytes(b"different")
+    monkeypatch.setattr(
+        "music_organizer.planner.scan_source",
+        lambda _: [ScannedAudio(str(audio), "track.mp3", None, [])],
+    )
+    monkeypatch.setattr(
+        "music_organizer.planner.read_tags",
+        lambda _: {"album": "Album", "albumartist": "Artist", "artist": "Artist"},
+    )
+
+    plan = build_plan(str(source_root), None, str(mp3_root))
+
+    assert plan.status == "blocked"
+    assert any(issue["code"] == "different_destination_file" for issue in plan.tracks[0].issues)
+
 
 def test_planner_marks_abnormal_lyrics_for_deletion_without_migrating_lrc(tmp_path: Path, monkeypatch) -> None:
     source_root = tmp_path / "source"
@@ -105,7 +195,7 @@ def test_planner_marks_abnormal_lyrics_for_deletion_without_migrating_lrc(tmp_pa
     lrc = source_root / "track.lrc"
     audio.write_bytes(b"audio")
     lrc.write_text("[00:01.00]作词：甲\n[00:02.00]作曲：乙\n", encoding="utf-8")
-    scanned = ScannedAudio(str(audio), "track.mp3", str(lrc), [], None)
+    scanned = ScannedAudio(str(audio), "track.mp3", str(lrc), [])
     monkeypatch.setattr("music_organizer.planner.scan_source", lambda _: [scanned])
     monkeypatch.setattr(
         "music_organizer.planner.read_tags",
@@ -135,7 +225,7 @@ def test_planner_rejects_deletion_of_uncertain_lyrics(tmp_path: Path, monkeypatc
     lrc = source_root / "track.lrc"
     audio.write_bytes(b"audio")
     lrc.write_text("[00:01.00]只有一句歌词\n", encoding="utf-8")
-    scanned = ScannedAudio(str(audio), "track.mp3", str(lrc), [], None)
+    scanned = ScannedAudio(str(audio), "track.mp3", str(lrc), [])
     monkeypatch.setattr("music_organizer.planner.scan_source", lambda _: [scanned])
     monkeypatch.setattr(
         "music_organizer.planner.read_tags",
@@ -163,7 +253,7 @@ def test_lyrics_cleanup_plan_requires_only_source_and_can_verify_without_migrati
     lrc = source_root / "track.lrc"
     audio.write_bytes(b"audio")
     lrc.write_text("[00:01.00]作词：甲\n[00:02.00]作曲：乙\n", encoding="utf-8")
-    scanned = ScannedAudio(str(audio), "track.mp3", str(lrc), [], None)
+    scanned = ScannedAudio(str(audio), "track.mp3", str(lrc), [])
     monkeypatch.setattr("music_organizer.planner.scan_source", lambda _: [scanned])
 
     initial = build_plan(str(source_root), None, None, lyrics_cleanup_only=True)
@@ -203,8 +293,8 @@ def test_planner_allows_one_destination_and_skips_unselected_format(tmp_path: Pa
     monkeypatch.setattr(
         "music_organizer.planner.scan_source",
         lambda _: [
-            ScannedAudio(str(flac), "selected.flac", str(flac_lrc), [], None),
-            ScannedAudio(str(mp3), "unselected.mp3", None, [], None),
+            ScannedAudio(str(flac), "selected.flac", str(flac_lrc), []),
+            ScannedAudio(str(mp3), "unselected.mp3", None, []),
         ],
     )
     monkeypatch.setattr(
@@ -219,29 +309,30 @@ def test_planner_allows_one_destination_and_skips_unselected_format(tmp_path: Pa
     assert plan.tracks[0].assets[0].destination.startswith(str(flac_root))
 
 
-def test_shared_cover_is_planned_once(tmp_path: Path, monkeypatch) -> None:
+def test_embedded_cover_is_extracted_per_song(tmp_path: Path, monkeypatch) -> None:
     source_root = tmp_path / "source"
     flac_root = tmp_path / "flac"
     mp3_root = tmp_path / "mp3"
     source_root.mkdir()
     flac_root.mkdir()
     mp3_root.mkdir()
-    cover = source_root / "cover.ico"
-    cover.write_bytes(b"cover")
     scanned = []
     for number in (1, 2):
         audio = source_root / f"track{number}.flac"
         lyrics = source_root / f"track{number}.lrc"
         audio.write_bytes(f"audio-{number}".encode())
         lyrics.write_text("[00:01.00]first lyric\n[00:02.00]second lyric\n", encoding="utf-8")
-        scanned.append(ScannedAudio(str(audio), audio.name, str(lyrics), [], str(cover)))
+        scanned.append(ScannedAudio(str(audio), audio.name, str(lyrics), []))
     monkeypatch.setattr("music_organizer.planner.scan_source", lambda _: scanned)
     monkeypatch.setattr(
         "music_organizer.planner.read_tags",
         lambda _: {"album": "Album", "albumartist": "Artist", "artist": "Artist"},
     )
 
-    plan = build_plan(str(source_root), str(flac_root), str(mp3_root))
+    # Both songs carry their own embedded JPEG cover; nothing shared on disk.
+    monkeypatch.setattr("music_organizer.planner.embedded_cover", lambda _: (b"\xff\xd8\xff-jpeg", ".jpg"))
+
+    plan = build_plan(str(source_root), str(flac_root), str(mp3_root), data_root=str(tmp_path / "state"))
 
     cover_assets = [asset for track in plan.tracks for asset in track.assets if asset.kind == "cover"]
     assert plan.status == "ready"
